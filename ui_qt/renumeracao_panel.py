@@ -18,11 +18,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
 from core.numeracao import atualizar_tipos_parcelas, renumerar_parcelas
+from ui_qt.tema_qt import botao_verde
 
 _FORMATOS_NUMERO = ["1", "01", "001", "0001", "00001"]
 
@@ -46,6 +48,7 @@ class PainelNumeracao(QWidget):
         dominios: dict,
         obter_abas_perimetro: Callable[[], list],
         obter_aba_atual: Callable[[], object | None],
+        tema: dict,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -56,29 +59,10 @@ class PainelNumeracao(QWidget):
         linha = QHBoxLayout(self)
         linha.setContentsMargins(10, 6, 10, 6)
 
-        # Reorganizar/Marcar/Desmarcar/Desfazer agem só na aba de Parcela
-        # ATUAL; Renumerar/Atualizar correm entre TODAS as parcelas — os 5
-        # (+ Desfazer) ficam juntos aqui porque é assim que o profissional
-        # pediu pra usar, mesmo tendo escopo diferente por baixo.
-        btn_reorganizar = QPushButton("↻ Reorganizar")
-        btn_reorganizar.setToolTip("Reorganiza a grade da parcela aberta agora (mais ao norte, sentido horário).")
-        btn_reorganizar.clicked.connect(self._reorganizar_atual)
-        linha.addWidget(btn_reorganizar)
-
-        btn_marcar = QPushButton("☑ Marcar todos")
-        btn_marcar.setToolTip('Marca "Renumerar?" em toda a grade da parcela aberta agora.')
-        btn_marcar.clicked.connect(lambda: self._definir_renumerar_atual(True))
-        linha.addWidget(btn_marcar)
-
-        btn_desmarcar = QPushButton("☐ Desmarcar todos")
-        btn_desmarcar.setToolTip('Desmarca "Renumerar?" em toda a grade da parcela aberta agora.')
-        btn_desmarcar.clicked.connect(lambda: self._definir_renumerar_atual(False))
-        linha.addWidget(btn_desmarcar)
-
-        linha.addSpacing(8)
-        linha.addWidget(self._separador_vertical())
-        linha.addSpacing(8)
-
+        # Credenciado/Formato/Próximo nº (por tipo) ficam à ESQUERDA; o
+        # bloco de botões (numeração + reorganização) fica à DIREITA, dois
+        # a dois — assim pedido pelo usuário depois de usar a versão de
+        # botões todos em fileira única.
         layout_cred, self.campo_credenciado = _campo_com_rotulo("Credenciado", largura=110)
         self.campo_credenciado.setText("")
         linha.addLayout(layout_cred)
@@ -108,35 +92,63 @@ class PainelNumeracao(QWidget):
         linha.addWidget(self._separador_vertical())
         linha.addSpacing(12)
 
-        btn_renumerar = QPushButton("Renumerar vértices marcados")
+        def _botao_bloco(texto: str) -> QPushButton:
+            botao = botao_verde(texto, tema)
+            botao.setMinimumWidth(190)
+            botao.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            return botao
+
+        layout_botoes = QVBoxLayout()
+        layout_botoes.setSpacing(4)
+
+        linha_botoes_1 = QHBoxLayout()
+        btn_renumerar = _botao_bloco("Renumerar vértices marcados")
         btn_renumerar.setToolTip(
             'Só linhas com "Renumerar?" marcado recebem código novo, em todas '
             "as parcelas abertas — desmarque vértices que não são seus."
         )
         btn_renumerar.clicked.connect(self._renumerar)
-        linha.addWidget(btn_renumerar)
+        linha_botoes_1.addWidget(btn_renumerar)
 
-        btn_atualizar = QPushButton("🔄 Atualizar código (só o Tipo)")
+        btn_atualizar = _botao_bloco("🔄 Atualizar código (só o Tipo)")
         btn_atualizar.setToolTip(
             "Já renumerou e corrigiu o Tipo de algum vértice na grade? Isto "
             "reescreve só o pedaço do Tipo no código, sem reatribuir número."
         )
         btn_atualizar.clicked.connect(self._atualizar_tipos)
-        linha.addWidget(btn_atualizar)
+        linha_botoes_1.addWidget(btn_atualizar)
 
-        linha.addSpacing(8)
-        linha.addWidget(self._separador_vertical())
-        linha.addSpacing(8)
-
-        btn_desfazer = QPushButton("↶ Desfazer (Ctrl+Z)")
+        btn_desfazer = _botao_bloco("↶ Desfazer (Ctrl+Z)")
         btn_desfazer.setToolTip(
             "Volta a grade da parcela aberta agora pro estado de antes da "
             "última mudança — edição de célula, colar, Reorganizar etc."
         )
         btn_desfazer.clicked.connect(self._desfazer_atual)
-        linha.addWidget(btn_desfazer)
+        linha_botoes_1.addWidget(btn_desfazer)
+        layout_botoes.addLayout(linha_botoes_1)
 
-        linha.addStretch()
+        # Reorganizar/Marcar/Desmarcar agem só na aba de Parcela ATUAL;
+        # Renumerar/Atualizar (linha de cima) correm entre TODAS as
+        # parcelas — ficam juntos aqui porque é assim que o profissional
+        # pediu pra usar, mesmo tendo escopo diferente por baixo.
+        linha_botoes_2 = QHBoxLayout()
+        btn_reorganizar = _botao_bloco("↻ Reorganizar")
+        btn_reorganizar.setToolTip("Reorganiza a grade da parcela aberta agora (mais ao norte, sentido horário).")
+        btn_reorganizar.clicked.connect(self._reorganizar_atual)
+        linha_botoes_2.addWidget(btn_reorganizar)
+
+        btn_marcar = _botao_bloco("☑ Marcar todos")
+        btn_marcar.setToolTip('Marca "Renumerar?" em toda a grade da parcela aberta agora.')
+        btn_marcar.clicked.connect(lambda: self._definir_renumerar_atual(True))
+        linha_botoes_2.addWidget(btn_marcar)
+
+        btn_desmarcar = _botao_bloco("☐ Desmarcar todos")
+        btn_desmarcar.setToolTip('Desmarca "Renumerar?" em toda a grade da parcela aberta agora.')
+        btn_desmarcar.clicked.connect(lambda: self._definir_renumerar_atual(False))
+        linha_botoes_2.addWidget(btn_desmarcar)
+        layout_botoes.addLayout(linha_botoes_2)
+
+        linha.addLayout(layout_botoes, 1)
 
     def _rotulo_pequeno(self, texto: str) -> QLabel:
         etiqueta = QLabel(texto)

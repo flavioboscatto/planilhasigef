@@ -1,8 +1,9 @@
 """Importação de vértices de arquivo (Qt) — equivalente a
-ui/importar_vertices.py. Cada arquivo importado vira uma "versão" própria
-(não mexe direto na grade da parcela): o profissional revisa e decide
-quando levar aquilo pra planilha definitiva — mesma lógica da versão
-Streamlit, reaproveitando core/importacao.py e core/geo.py sem mudança.
+ui/importar_vertices.py. Este diálogo só cuida de escolher o arquivo,
+separador e mapeamento de coluna; ao clicar "Criar versão a partir deste
+arquivo", quem vira dono do resultado é uma sub-aba nova e persistente
+dentro da parcela (ui_qt/importacao_tab.py::AbaImportacao) — reaproveitando
+core/importacao.py e core/geo.py sem mudança.
 
 Diferença real: aqui o arquivo é escolhido por QFileDialog nativo — sem
 precisar do hack de subprocess que usamos no Streamlit local (aquele
@@ -10,6 +11,8 @@ existia só por causa do tkinter rodar fora da thread principal do
 Streamlit; Qt não tem esse problema).
 """
 from __future__ import annotations
+
+from typing import Callable
 
 import pandas as pd
 from PySide6.QtWidgets import (
@@ -23,7 +26,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -31,7 +33,6 @@ from PySide6.QtWidgets import (
 )
 
 from core.geo import utm_para_geodesica
-from core.importacao import mesclar_por_codigo
 from core.parsing import (
     ValorInvalidoError,
     normaliza_decimal,
@@ -40,7 +41,6 @@ from core.parsing import (
     parse_numero,
 )
 from importers.delimitado import SEPARADORES, ler_arquivo
-from ui_qt.vertices_table import TabelaVerticesModel, TabelaVerticesView
 
 _CAMPOS_NUMERICOS = {"sigma_long", "sigma_lat", "h", "sigma_h"}
 
@@ -79,7 +79,7 @@ class ImportarVerticesDialog(QDialog):
         hemisferio_inicial: str,
         tema: dict,
         casas: dict,
-        aplicar_versao,
+        criar_aba_importacao: Callable[[pd.DataFrame, pd.DataFrame | None, float, str], None],
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -92,10 +92,9 @@ class ImportarVerticesDialog(QDialog):
         self._hemisferios_disponiveis = hemisferios_disponiveis
         self._tema = tema
         self._casas = casas
-        self._aplicar_versao = aplicar_versao
+        self._criar_aba_importacao = criar_aba_importacao
         self._df_bruto: pd.DataFrame | None = None
         self._combos_mapeamento: dict[str, QComboBox] = {}
-        self._proximo_id_versao = 0
 
         layout_geral = QVBoxLayout(self)
 
@@ -172,8 +171,9 @@ class ImportarVerticesDialog(QDialog):
 
         self.aviso_utm = QLabel(
             "Zona/hemisfério errado aqui sai sem aviso: o número parece válido, só "
-            "que aponta pro lugar errado. Se perceber depois de criar a versão, "
-            "corrija aqui e use \"Recalcular geodésica\" na versão pendente."
+            "que aponta pro lugar errado. Se perceber depois de criar a "
+            "importação, corrija o Meridiano/Hemisfério na aba \"Importação N\" "
+            "criada e use \"Recalcular geodésica\" lá."
         )
         self.aviso_utm.setWordWrap(True)
         self.aviso_utm.setVisible(False)
@@ -184,12 +184,14 @@ class ImportarVerticesDialog(QDialog):
         btn_criar_versao.clicked.connect(self._criar_versao)
         layout_geral.addWidget(btn_criar_versao)
 
-        self.area_versoes = QWidget()
-        self.layout_versoes = QVBoxLayout(self.area_versoes)
-        rolagem = QScrollArea()
-        rolagem.setWidgetResizable(True)
-        rolagem.setWidget(self.area_versoes)
-        layout_geral.addWidget(rolagem, stretch=1)
+        self.rotulo_status = QLabel(
+            "Cada arquivo importado vira uma aba própria (\"Importação N\") ao "
+            "lado da Tabela de Perímetro — pode importar mais de um arquivo "
+            "nesta mesma janela."
+        )
+        self.rotulo_status.setWordWrap(True)
+        layout_geral.addWidget(self.rotulo_status)
+        layout_geral.addStretch()
 
         self._atualizar_aviso_utm(self.combo_sistema.currentText())
 
@@ -317,77 +319,9 @@ class ImportarVerticesDialog(QDialog):
             if campo in _CAMPOS_NUMERICOS:
                 dados[campo] = dados[campo].map(normaliza_decimal)
 
-        self._adicionar_versao(dados, dados_utm_brutos)
-
-    def _adicionar_versao(self, dados: pd.DataFrame, dados_utm_brutos: pd.DataFrame | None = None) -> None:
-        id_versao = self._proximo_id_versao
-        self._proximo_id_versao += 1
-
-        bloco = QWidget()
-        layout_bloco = QVBoxLayout(bloco)
-        layout_bloco.addWidget(QLabel(f"<b>Importação {id_versao + 1}</b> ({len(dados)} linha(s))"))
-
-        modelo = TabelaVerticesModel(
-            tema=self._tema,
-            opcoes_tipo_vertice=self._opcoes_tipo_vertice,
-            opcoes_metodo=self._opcoes_metodo,
-            opcoes_limite=self._opcoes_limite,
-            casas=self._casas,
-            df=dados,
+        meridiano = float(self.combo_meridiano.currentText()) if sistema == "UTM" else 0.0
+        hemisferio = self.combo_hemisferio.currentText() if sistema == "UTM" else ""
+        self._criar_aba_importacao(dados, dados_utm_brutos, meridiano, hemisferio)
+        self.rotulo_status.setText(
+            f"Nova aba de importação criada ({len(dados)} linha(s)) ao lado da Tabela de Perímetro."
         )
-        vista = TabelaVerticesView(modelo)
-        vista.setMinimumHeight(170)
-        vista.setMaximumHeight(260)
-        layout_bloco.addWidget(vista)
-
-        linha_botoes = QHBoxLayout()
-        btn_usar = QPushButton("Usar esta versão na planilha definitiva")
-        btn_remover = QPushButton("Remover esta versão")
-        btn_usar.clicked.connect(lambda: self._usar_versao(modelo, bloco, dados_utm_brutos))
-        btn_remover.clicked.connect(lambda: self._remover_versao(bloco))
-        linha_botoes.addWidget(btn_usar)
-        linha_botoes.addWidget(btn_remover)
-        if dados_utm_brutos is not None:
-            btn_recalcular = QPushButton("🔄 Recalcular geodésica (Meridiano/Hemisfério acima)")
-            btn_recalcular.clicked.connect(lambda: self._recalcular_versao(modelo, dados_utm_brutos))
-            linha_botoes.addWidget(btn_recalcular)
-        layout_bloco.addLayout(linha_botoes)
-
-        self.layout_versoes.addWidget(bloco)
-
-    def _recalcular_versao(self, modelo: TabelaVerticesModel, dados_utm_brutos: pd.DataFrame) -> None:
-        """Reconverte esta versão pendente com o Meridiano/Hemisfério
-        escolhidos AGORA, a partir do easting/northing original preservado
-        — sem precisar reimportar o arquivo nem refazer o mapeamento de
-        coluna. Só toca E/Long e N/Lat; qualquer outra edição já feita na
-        grade desta versão continua."""
-        meridiano = float(self.combo_meridiano.currentText())
-        hemisferio = self.combo_hemisferio.currentText()
-        longitudes, latitudes = self._converter_utm(
-            dados_utm_brutos["e_long"], dados_utm_brutos["n_lat"], meridiano, hemisferio
-        )
-        modelo.definir_coluna_valores("e_long", longitudes)
-        modelo.definir_coluna_valores("n_lat", latitudes)
-
-    def _remover_versao(self, bloco: QWidget) -> None:
-        self.layout_versoes.removeWidget(bloco)
-        bloco.deleteLater()
-
-    def _usar_versao(
-        self, modelo_versao: TabelaVerticesModel, bloco: QWidget, dados_utm_brutos: pd.DataFrame | None
-    ) -> None:
-        # não fecha o diálogo: outras versões pendentes (de outros arquivos
-        # já importados nesta mesma sessão de importação) continuam
-        # disponíveis pra revisar/usar depois — só esta some, usada.
-        if dados_utm_brutos is not None:
-            # guarda o easting/northing original DENTRO da própria linha
-            # (colunas internas, ver ui_qt/vertices_table.py) — sobrevive a
-            # Reorganizar/Renumerar depois de mesclado, diferente de um
-            # dicionário à parte indexado por código (que perde o vínculo
-            # assim que o código muda).
-            for pos in range(len(dados_utm_brutos)):
-                modelo_versao.definir_utm_bruto(
-                    pos, dados_utm_brutos["e_long"].iloc[pos], dados_utm_brutos["n_lat"].iloc[pos]
-                )
-        self._aplicar_versao(modelo_versao.dataframe())
-        self._remover_versao(bloco)

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtGui import QColor, QFont
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel, QPushButton
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "theme_tokens.json"
 
@@ -56,3 +56,19 @@ def titulo_secao(texto: str, papel: Papel) -> QLabel:
         " padding: 6px 10px; border-radius: 4px;"
     )
     return rotulo
+
+
+def botao_verde(texto: str, tema: dict[str, Papel]) -> QPushButton:
+    """Botão de ação em verde claro (mesma cor de "perimetro_entrada" no
+    modelo oficial) — pedido do usuário pra diferenciar visualmente as
+    ações de aba/painel do resto do app. Compartilhado entre
+    ui_qt/perimetro_tab.py, ui_qt/importacao_tab.py e
+    ui_qt/renumeracao_panel.py, então mora aqui, não num arquivo só."""
+    cor = tema["perimetro_entrada"].fundo
+    botao = QPushButton(texto)
+    botao.setStyleSheet(
+        f"QPushButton {{ background: {cor.name()}; border: 1px solid {cor.darker(140).name()}; }}"
+        f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
+        f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
+    )
+    return botao

@@ -4,6 +4,10 @@ botões (Reorganizar, Marcar/Desmarcar todos, Preencher em lote).
 
 Sem a prévia colorida à parte que a versão Streamlit precisava: aqui a
 própria grade editável já é colorida (ver ui_qt/vertices_table.py).
+
+Cada arquivo importado (ui_qt/importar_vertices_dialog.py) vira uma
+sub-aba própria e persistente aqui dentro ("Importação 1", "Importação
+2", ...), ao lado da "Tabela de Perímetro" — ver ui_qt/importacao_tab.py.
 """
 from __future__ import annotations
 
@@ -14,22 +18,19 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from PySide6.QtCore import Qt
-
-from core.geo import utm_para_geodesica
 from core.importacao import mesclar_por_codigo
 from core.models import Perimetro
-from core.parsing import normaliza_decimal, parse_numero
 from core.tabela_vertices import linha_para_vertice, preenchido, vertice_para_linha
 from core.validators.geometria import reordena_norte_horario
+from ui_qt.importacao_tab import AbaImportacao
 from ui_qt.importar_vertices_dialog import ImportarVerticesDialog
-from ui_qt.tema_qt import Papel, titulo_secao
-from ui_qt.vertices_table import COLUNAS_VERTICE, TabelaVerticesModel, TabelaVerticesView
+from ui_qt.tema_qt import Papel, botao_verde, titulo_secao
+from ui_qt.vertices_table import TabelaVerticesModel, TabelaVerticesView
 
 _CAMPOS_LOTE = {
     "Tipo": "tipo_vertice",
@@ -45,20 +46,6 @@ def _combo(itens: list[str]) -> QComboBox:
     return caixa
 
 
-def _botao_verde(texto: str, tema: dict) -> QPushButton:
-    """Botões de ação desta aba em verde claro (mesma cor de
-    "perimetro_entrada" no modelo oficial) — pedido do usuário pra
-    diferenciar visualmente as ações da aba Perímetro do resto do app."""
-    cor = tema["perimetro_entrada"].fundo
-    botao = QPushButton(texto)
-    botao.setStyleSheet(
-        f"QPushButton {{ background: {cor.name()}; border: 1px solid {cor.darker(140).name()}; }}"
-        f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
-        f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
-    )
-    return botao
-
-
 def _form(rotulo: str, campo: QWidget) -> QVBoxLayout:
     layout = QVBoxLayout()
     layout.addWidget(QLabel(rotulo))
@@ -72,6 +59,8 @@ class AbaPerimetro(QWidget):
         self.indice = indice
         self._dominios = dominios
         self._tema = tema
+        self._proxima_importacao = 1
+        self._dialogo_importacao: ImportarVerticesDialog | None = None
 
         opcoes_tipo_vertice = [t["codigo"] for t in dominios["tipos_vertice"]]
         opcoes_metodo = [m["codigo"] for m in dominios["metodos_posicionamento"]]
@@ -101,19 +90,9 @@ class AbaPerimetro(QWidget):
         linha_cabecalho.addLayout(_form("Hemisfério", self.hemisferio))
         layout.addLayout(linha_cabecalho)
 
-        linha_importar = QHBoxLayout()
-        btn_importar = _botao_verde("Importar vértices de um arquivo (TXT/CSV)...", tema)
+        btn_importar = botao_verde("Importar vértices de um arquivo (TXT/CSV)...", tema)
         btn_importar.clicked.connect(self._abrir_importador)
-        linha_importar.addWidget(btn_importar, 2)
-        btn_recalcular_utm = _botao_verde("🔄 Recalcular geodésica (vértices de UTM)", tema)
-        btn_recalcular_utm.setToolTip(
-            "Vértices trazidos de uma importação UTM guardam o easting/northing "
-            "original — mudou o Meridiano Central ou o Hemisfério acima? Clique "
-            "aqui pra recalcular E/Long e N/Lat sem reimportar o arquivo."
-        )
-        btn_recalcular_utm.clicked.connect(self._recalcular_utm)
-        linha_importar.addWidget(btn_recalcular_utm, 1)
-        layout.addLayout(linha_importar)
+        layout.addWidget(btn_importar)
 
         layout.addWidget(
             QLabel(
@@ -126,14 +105,14 @@ class AbaPerimetro(QWidget):
         # Reorganizar/Marcar todos/Desmarcar todos/Desfazer moraram aqui
         # antes — subiram pro painel de Numeração (faixa horizontal acima
         # das abas), lado a lado com Renumerar/Atualizar, a pedido do
-        # usuário. Os métodos continuam aqui (_reorganizar, modelo_tabela.
-        # desfazer()) porque o painel chama neles na aba atualmente aberta.
+        # usuário. O método continua aqui (_reorganizar) porque o painel
+        # chama nele na aba atualmente aberta.
 
         linha_lote = QHBoxLayout()
         self.combo_coluna_lote = _combo(list(_CAMPOS_LOTE))
         self.combo_valor_lote = QComboBox()
         self.combo_coluna_lote.currentTextChanged.connect(self._atualizar_opcoes_lote)
-        btn_aplicar_lote = _botao_verde("Aplicar a todas as linhas", tema)
+        btn_aplicar_lote = botao_verde("Aplicar a todas as linhas", tema)
         btn_aplicar_lote.clicked.connect(self._aplicar_lote)
         linha_lote.addWidget(QLabel("Preencher em lote:"))
         linha_lote.addWidget(self.combo_coluna_lote)
@@ -141,6 +120,13 @@ class AbaPerimetro(QWidget):
         linha_lote.addWidget(btn_aplicar_lote)
         layout.addLayout(linha_lote)
         self._atualizar_opcoes_lote(self.combo_coluna_lote.currentText())
+
+        self.subabas = QTabWidget()
+        layout.addWidget(self.subabas)
+
+        aba_tabela = QWidget()
+        layout_aba_tabela = QVBoxLayout(aba_tabela)
+        layout_aba_tabela.setContentsMargins(0, 6, 0, 0)
 
         self.modelo_tabela = TabelaVerticesModel(
             tema=tema,
@@ -150,16 +136,18 @@ class AbaPerimetro(QWidget):
             casas=dominios["limites_coordenadas"],
         )
         self.grade = TabelaVerticesView(self.modelo_tabela)
-        layout.addWidget(self.grade)
+        layout_aba_tabela.addWidget(self.grade)
 
         barra_linhas = QHBoxLayout()
-        btn_add_linha = _botao_verde("+ Adicionar vértice", tema)
-        btn_remove_linha = _botao_verde("- Remover vértice(s) selecionado(s)", tema)
+        btn_add_linha = botao_verde("+ Adicionar vértice", tema)
+        btn_remove_linha = botao_verde("- Remover vértice(s) selecionado(s)", tema)
         btn_add_linha.clicked.connect(lambda: self.modelo_tabela.inserir_linha())
         btn_remove_linha.clicked.connect(self._remover_linhas_selecionadas)
         barra_linhas.addWidget(btn_add_linha)
         barra_linhas.addWidget(btn_remove_linha)
-        layout.addLayout(barra_linhas)
+        layout_aba_tabela.addLayout(barra_linhas)
+
+        self.subabas.addTab(aba_tabela, "Tabela de Perímetro")
 
     def _atualizar_opcoes_lote(self, escolha: str) -> None:
         mapa_opcoes = {
@@ -191,20 +179,15 @@ class AbaPerimetro(QWidget):
         vertices = [linha_para_vertice(linha) for _, linha in preenchidas]
         # reordena_norte_horario só reordena/inverte a lista (não cria Vertice
         # novo), então id(v) ainda identifica a linha original — é assim que
-        # "renumerar" e as colunas internas de UTM (nenhuma das duas existe
-        # em Vertice, só na grade) acompanham o vértice até a nova posição.
+        # "renumerar" (que não existe em Vertice, só na grade) acompanha o
+        # vértice até a nova posição.
         renumerar_por_id = {id(v): bool(linha["renumerar"]) for (_, linha), v in zip(preenchidas, vertices)}
-        utm_por_id = {
-            id(v): (linha.get("_utm_easting", ""), linha.get("_utm_northing", ""))
-            for (_, linha), v in zip(preenchidas, vertices)
-        }
         reordenados = reordena_norte_horario(vertices)
 
         novas_linhas = []
         for v in reordenados:
             nova = vertice_para_linha(v)
             nova["renumerar"] = renumerar_por_id[id(v)]
-            nova["_utm_easting"], nova["_utm_northing"] = utm_por_id[id(v)]
             novas_linhas.append(nova)
         # linhas sem código (vagas em branco, pra próximo vértice) não
         # entram no reordenamento — sem isto, elas simplesmente
@@ -215,7 +198,13 @@ class AbaPerimetro(QWidget):
         self.modelo_tabela.substituir(pd.DataFrame(novas_linhas))
 
     def _abrir_importador(self) -> None:
-        dialogo = ImportarVerticesDialog(
+        # não-modal (.show(), não .exec()): o usuário precisa poder ir até a
+        # sub-aba "Importação N" recém-criada (recalcular, mesclar) sem
+        # precisar fechar o diálogo antes — e pode voltar aqui pra importar
+        # mais um arquivo na sequência. self._dialogo_importacao segura a
+        # referência viva (senão o Python coletaria o objeto e a janela
+        # sumiria sozinha).
+        self._dialogo_importacao = ImportarVerticesDialog(
             opcoes_tipo_vertice=[t["codigo"] for t in self._dominios["tipos_vertice"]],
             opcoes_metodo=[m["codigo"] for m in self._dominios["metodos_posicionamento"]],
             opcoes_limite=[t["codigo"] for t in self._dominios["tipos_limite"]],
@@ -225,41 +214,51 @@ class AbaPerimetro(QWidget):
             hemisferio_inicial=self.hemisferio.currentText(),
             tema=self._tema,
             casas=self._dominios["limites_coordenadas"],
-            aplicar_versao=self._aplicar_versao_importada,
+            criar_aba_importacao=self._criar_aba_importacao,
             parent=self,
         )
-        dialogo.exec()
+        self._dialogo_importacao.setModal(False)
+        self._dialogo_importacao.show()
+
+    def _criar_aba_importacao(
+        self,
+        dados: pd.DataFrame,
+        dados_utm_brutos: pd.DataFrame | None,
+        meridiano: float,
+        hemisferio: str,
+    ) -> None:
+        numero = self._proxima_importacao
+        self._proxima_importacao += 1
+
+        aba = AbaImportacao(
+            numero=numero,
+            dados=dados,
+            dados_utm_brutos=dados_utm_brutos,
+            meridiano_inicial=meridiano,
+            hemisferio_inicial=hemisferio,
+            meridianos_disponiveis=self._dominios["meridianos_centrais_brasil"],
+            hemisferios_disponiveis=self._dominios["hemisferio"],
+            tema=self._tema,
+            aplicar_na_parcela=self._aplicar_versao_importada,
+            remover_esta_aba=self._remover_aba_importacao,
+        )
+        self.subabas.addTab(aba, f"Importação {numero}")
+        self.subabas.setCurrentWidget(aba)
+
+    def _remover_aba_importacao(self, aba: AbaImportacao) -> None:
+        indice = self.subabas.indexOf(aba)
+        if indice != -1:
+            self.subabas.removeTab(indice)
+        aba.deleteLater()
 
     def _aplicar_versao_importada(self, dados_importados: pd.DataFrame) -> None:
-        # mesclar_por_codigo copia QUALQUER coluna presente em
-        # dados_importados, inclusive as internas de UTM (ver
-        # ui_qt/vertices_table.py) — não precisa de nada especial aqui.
         tabela_mesclada, avisos = mesclar_por_codigo(self.modelo_tabela.dataframe(), dados_importados)
         self.modelo_tabela.substituir(tabela_mesclada)
         for aviso in avisos:
             QMessageBox.warning(self, "Importar vértices", aviso)
-
-    def _recalcular_utm(self) -> None:
-        linhas = self.modelo_tabela.linhas_com_utm_bruto()
-        if not linhas:
-            QMessageBox.information(
-                self, "Recalcular geodésica",
-                "Nenhum vértice desta parcela veio de uma importação UTM ainda "
-                "(ou os que vieram não guardam mais o dado original).",
-            )
-            return
-        meridiano = float(self.meridiano_central.currentText())
-        hemisferio = self.hemisferio.currentText()
-        col_elong = COLUNAS_VERTICE.index("e_long")
-        col_nlat = COLUNAS_VERTICE.index("n_lat")
-        for pos in linhas:
-            easting, northing = self.modelo_tabela.utm_bruto(pos)
-            longitude, latitude = utm_para_geodesica(parse_numero(easting), parse_numero(northing), meridiano, hemisferio)
-            self.modelo_tabela.setData(self.modelo_tabela.index(pos, col_elong), normaliza_decimal(str(longitude)), Qt.ItemDataRole.EditRole)
-            self.modelo_tabela.setData(self.modelo_tabela.index(pos, col_nlat), normaliza_decimal(str(latitude)), Qt.ItemDataRole.EditRole)
         QMessageBox.information(
-            self, "Recalcular geodésica",
-            f"{len(linhas)} vértice(s) recalculado(s) com Meridiano {meridiano:g}° / Hemisfério {hemisferio}.",
+            self, "Importar vértices",
+            f"{len(dados_importados)} vértice(s) mesclado(s) na Tabela de Perímetro.",
         )
 
     def modelo(self) -> Perimetro:

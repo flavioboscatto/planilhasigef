@@ -41,12 +41,12 @@ _ROTULOS = {
     "tipo_vertice": "Tipo",
     "codigo": "Vértice",
     "e_long": "E/Long",
-    "sigma_long": "Sigma long",
+    "sigma_long": "Sigma Long",
     "n_lat": "N/Lat",
-    "sigma_lat": "Sigma lat",
+    "sigma_lat": "Sigma Lat",
     "h": "h",
     "sigma_h": "Sigma h",
-    "metodo_posicionamento": "Método de Posicionamento",
+    "metodo_posicionamento": "Met. Posic.",
     "tipo_limite": "Tipo Limite",
     "cns": "CNS",
     "matricula": "Matrícula",
@@ -63,34 +63,22 @@ _COLUNAS_CONFRONTANTE = {"tipo_limite", "cns", "matricula", "descritivo"}
 
 _MARCADO = {Qt.CheckState.Checked, Qt.CheckState.Checked.value, 2}
 
-# easting/northing original de quem veio de importação UTM — colunas
-# internas (fora de COLUNAS_VERTICE: não aparecem na grade nem no .ods),
-# mas viajam DENTRO da mesma linha do DataFrame, então sobrevivem a
-# Reorganizar (linha inteira se move junto) e a Renumerar/Atualizar (só
-# mexe na célula "codigo", nunca recria a linha) — ao contrário de um
-# dicionário à parte indexado por código, que perdia o vínculo assim que o
-# código mudava.
-COLUNAS_UTM_INTERNAS = ["_utm_easting", "_utm_northing"]
-
 
 def _normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
-    """Reordena pra ordem exata de COLUNAS_VERTICE (+ colunas internas no
-    fim), por NOME — nunca confiar na ordem que um DataFrame chegou.
-    `pd.DataFrame(lista_de_dicts)` usa a ordem das chaves de cada dict, que
-    pode não bater com COLUNAS_VERTICE (foi assim que o Reorganizar
-    corrompeu a tabela: a grade lê/escreve célula por POSIÇÃO, não por nome
-    de coluna — uma ordem diferente faz cada coluna mostrar o dado da
-    vizinha). Coluna ausente (ex.: importação que só mapeou algumas colunas
-    do arquivo) ganha o padrão em vez de quebrar — só a ORDEM é exigida,
-    não o conjunto completo."""
+    """Reordena pra ordem exata de COLUNAS_VERTICE, por NOME — nunca
+    confiar na ordem que um DataFrame chegou. `pd.DataFrame(lista_de_dicts)`
+    usa a ordem das chaves de cada dict, que pode não bater com
+    COLUNAS_VERTICE (foi assim que o Reorganizar corrompeu a tabela: a
+    grade lê/escreve célula por POSIÇÃO, não por nome de coluna — uma ordem
+    diferente faz cada coluna mostrar o dado da vizinha). Coluna ausente
+    (ex.: importação que só mapeou algumas colunas do arquivo) ganha o
+    padrão em vez de quebrar — só a ORDEM é exigida, não o conjunto
+    completo."""
     df = df.reset_index(drop=True)
     for coluna in COLUNAS_VERTICE:
         if coluna not in df.columns:
             df[coluna] = False if coluna == "renumerar" else ""
-    for coluna in COLUNAS_UTM_INTERNAS:
-        if coluna not in df.columns:
-            df[coluna] = ""
-    return df[COLUNAS_VERTICE + COLUNAS_UTM_INTERNAS]
+    return df[COLUNAS_VERTICE]
 
 
 class TabelaVerticesModel(QAbstractTableModel):
@@ -187,23 +175,6 @@ class TabelaVerticesModel(QAbstractTableModel):
             topo_esq = self.index(0, coluna)
             baixo_dir = self.index(len(self._df) - 1, coluna)
             self.dataChanged.emit(topo_esq, baixo_dir, [Qt.ItemDataRole.DisplayRole])
-
-    def definir_utm_bruto(self, posicao: int, easting: str, northing: str) -> None:
-        """Anexa o easting/northing original (pré-conversão) na linha —
-        não passa por dataChanged nem por desfazer: é metadado interno, não
-        um campo visível/editável da grade."""
-        self._df.at[posicao, "_utm_easting"] = str(easting)
-        self._df.at[posicao, "_utm_northing"] = str(northing)
-
-    def utm_bruto(self, posicao: int) -> tuple[str, str] | None:
-        easting = str(self._df.at[posicao, "_utm_easting"]).strip()
-        northing = str(self._df.at[posicao, "_utm_northing"]).strip()
-        if not easting or not northing or easting.lower() == "nan" or northing.lower() == "nan":
-            return None
-        return easting, northing
-
-    def linhas_com_utm_bruto(self) -> list[int]:
-        return [pos for pos in range(len(self._df)) if self.utm_bruto(pos) is not None]
 
     # --- QAbstractTableModel ---
 

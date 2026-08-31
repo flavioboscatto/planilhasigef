@@ -30,7 +30,7 @@ def _nova_aba(indice: int, qtbot) -> AbaPerimetro:
 
 
 def _novo_painel(obter_abas, obter_atual=None, qtbot=None) -> PainelNumeracao:
-    painel = PainelNumeracao(_dominios(), obter_abas, obter_atual or (lambda: None))
+    painel = PainelNumeracao(_dominios(), obter_abas, obter_atual or (lambda: None), carregar_tema())
     if qtbot is not None:
         qtbot.addWidget(painel)
     return painel

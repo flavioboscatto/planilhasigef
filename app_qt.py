@@ -17,6 +17,7 @@ import json
 import sys
 from pathlib import Path
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -39,6 +40,7 @@ from ui_qt.renumeracao_panel import PainelNumeracao
 from ui_qt.tema_qt import carregar_tema
 
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
+ICONE_APP = Path(__file__).resolve().parent / "assets" / "icone_app.ico"
 
 
 def _carregar_json(nome_arquivo: str):
@@ -64,7 +66,9 @@ class JanelaPrincipal(QMainWindow):
         # 100% da largura da janela, e Renumerar/Atualizar continuam a um
         # clique, sem disputar espaço nem exigir trocar de aba.
         self.abas = QTabWidget()
-        self.painel_numeracao = PainelNumeracao(self.dominios, self._abas_perimetro, self._aba_perimetro_atual)
+        self.painel_numeracao = PainelNumeracao(
+            self.dominios, self._abas_perimetro, self._aba_perimetro_atual, self.tema
+        )
 
         central = QWidget()
         layout_central = QVBoxLayout(central)
@@ -240,6 +244,12 @@ def main() -> None:
     # de texto ficava sem contraste, só um traço fino ao focar.
     app.setStyle("Fusion")
     app.setStyleSheet(FOLHA_DE_ESTILO)
+    if ICONE_APP.exists():
+        # setWindowIcon na QApplication vale pra toda janela sem ícone
+        # próprio (barra de título, barra de tarefas, Alt+Tab) — o ícone do
+        # próprio .exe (sigef_qt.spec: icon=...) só cobre o Explorer, não a
+        # janela em si.
+        app.setWindowIcon(QIcon(str(ICONE_APP)))
     janela = JanelaPrincipal()
     janela.showMaximized()  # aproveita a largura toda — motivo real da Proposta A
     sys.exit(app.exec())

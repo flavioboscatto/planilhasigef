@@ -1,12 +1,16 @@
 """Testes da Fase 4 (aba Perímetro): campos de cabeçalho, botões
 (Reorganizar, Marcar/Desmarcar todos, Preencher em lote), round-trip
-modelo()/carregar_cabecalho()."""
+modelo()/carregar_cabecalho(), e as sub-abas de Importação persistentes
+(ui_qt/importacao_tab.py) que moram dentro da Tabela de Perímetro."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+import pandas as pd
+
 from core.models import Perimetro
+from ui_qt.importacao_tab import AbaImportacao
 from ui_qt.perimetro_tab import AbaPerimetro
 from ui_qt.tema_qt import carregar_tema
 
@@ -22,82 +26,54 @@ def _nova_aba(indice: int = 1) -> AbaPerimetro:
     return AbaPerimetro(indice, _dominios(), carregar_tema())
 
 
-def test_recalcular_utm_sem_vertice_importado_avisa_e_nao_quebra(qtbot, monkeypatch):
-    from PySide6.QtWidgets import QMessageBox
-
-    avisos = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: avisos.append(a))
+def test_criar_aba_importacao_adiciona_sub_aba_persistente(qtbot):
     aba = _nova_aba()
     qtbot.addWidget(aba)
 
-    aba._recalcular_utm()
+    dados = pd.DataFrame({"codigo": ["AJ4-M-001"], "e_long": ["-48,00"], "n_lat": ["-9,00"]})
+    aba._criar_aba_importacao(dados, None, -51.0, "Sul")
 
-    assert avisos
+    assert aba.subabas.count() == 2  # "Tabela de Perímetro" + "Importação 1"
+    assert aba.subabas.tabText(1) == "Importação 1"
+    assert isinstance(aba.subabas.widget(1), AbaImportacao)
+
+    aba._criar_aba_importacao(dados, None, -51.0, "Sul")
+    assert aba.subabas.tabText(2) == "Importação 2"
 
 
-def test_recalcular_utm_apos_importacao_usa_meridiano_hemisferio_atuais(qtbot, monkeypatch):
+def test_usar_esta_versao_mescla_e_a_aba_de_importacao_continua_visivel(qtbot, monkeypatch):
+    # pedido explícito do usuário: a aba de importação não deve sumir
+    # depois de mesclada — precisa continuar ali pra reconferir/recalcular
+    # depois, inclusive já com a Tabela de Perímetro preenchida.
     from PySide6.QtWidgets import QMessageBox
-
-    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
-    aba = _nova_aba()
-    qtbot.addWidget(aba)
-
-    # simula o que ImportarVerticesDialog faria ao "Usar esta versão" vinda
-    # de uma importação UTM: escreve o easting/northing bruto na coluna
-    # interna ANTES de mesclar (mesmo mecanismo do diálogo real)
-    import pandas as pd
-    dados_importados = pd.DataFrame([{"codigo": "AJ4-M-001", "e_long": "0", "n_lat": "0", "tipo_vertice": "", "sigma_long": "", "sigma_lat": "", "h": "", "sigma_h": "", "metodo_posicionamento": "", "tipo_limite": "", "cns": "", "matricula": "", "descritivo": "", "_utm_easting": "500000", "_utm_northing": "7000000"}])
-    aba._aplicar_versao_importada(dados_importados)
-
-    aba.hemisferio.setCurrentText("Sul")
-    aba._recalcular_utm()
-
-    resultado = aba.modelo_tabela.dataframe()
-    linha = resultado[resultado["codigo"] == "AJ4-M-001"].iloc[0]
-    from core.parsing import parse_numero
-    assert parse_numero(linha["n_lat"]) < 0  # Hemisfério Sul -> latitude negativa
-
-
-def test_recalcular_utm_sobrevive_a_renomear_codigo_e_reorganizar(qtbot, monkeypatch):
-    # o motivo real de trocar o rastreio de "dicionário por código" pra
-    # colunas internas na própria linha: renumerar/atualizar trocam o
-    # código, e reorganizar move a linha inteira de posição — um dicionário
-    # chaveado pelo código antigo perdia o vínculo nos dois casos.
-    from PySide6.QtWidgets import QMessageBox
-    import pandas as pd
-    from core.parsing import parse_numero
 
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
     aba = _nova_aba()
     qtbot.addWidget(aba)
 
-    dados_importados = pd.DataFrame([
-        {"codigo": "TEMP-1", "e_long": "-48,00", "n_lat": "0", "tipo_vertice": "M", "renumerar": True,
-         "sigma_long": "", "sigma_lat": "", "h": "", "sigma_h": "", "metodo_posicionamento": "",
-         "tipo_limite": "", "cns": "", "matricula": "", "descritivo": "",
-         "_utm_easting": "500000", "_utm_northing": "7000000"},
-    ])
-    aba._aplicar_versao_importada(dados_importados)
-    aba.modelo_tabela.inserir_linha({"codigo": "SUL", "e_long": "-48,00", "n_lat": "-10,00"})
-    aba.modelo_tabela.inserir_linha({"codigo": "LESTE", "e_long": "-47,50", "n_lat": "-9,50"})
+    dados = pd.DataFrame({"codigo": ["AJ4-M-001"], "e_long": ["-48,00"], "n_lat": ["-9,00"]})
+    aba._criar_aba_importacao(dados, None, -51.0, "Sul")
+    aba_importacao = aba.subabas.widget(1)
 
-    # renomeia o código do vértice UTM (simula renumerar_parcelas)
-    df = aba.modelo_tabela.dataframe()
-    coluna_codigo = list(df.columns).index("codigo")
-    coluna_nlat = list(df.columns).index("n_lat")
-    linha_temp = df[df["codigo"] == "TEMP-1"].index[0]
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(linha_temp, coluna_codigo), "AJQ-M-001", 2)
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(linha_temp, coluna_nlat), "-9,00", 2)
-
-    aba._reorganizar()  # move as linhas de posição
-
-    aba.hemisferio.setCurrentText("Sul")
-    aba._recalcular_utm()
+    aba._aplicar_versao_importada(aba_importacao._dataframe_atual())
 
     resultado = aba.modelo_tabela.dataframe()
-    linha_final = resultado[resultado["codigo"] == "AJQ-M-001"].iloc[0]
-    assert parse_numero(linha_final["n_lat"]) < 0
+    assert "AJ4-M-001" in list(resultado["codigo"])
+    assert aba.subabas.count() == 2  # a sub-aba de importação continua lá
+
+
+def test_remover_aba_importacao_tira_da_lista_de_sub_abas(qtbot):
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+
+    dados = pd.DataFrame({"codigo": ["AJ4-M-001"], "e_long": ["-48,00"], "n_lat": ["-9,00"]})
+    aba._criar_aba_importacao(dados, None, -51.0, "Sul")
+    aba_importacao = aba.subabas.widget(1)
+
+    aba._remover_aba_importacao(aba_importacao)
+
+    assert aba.subabas.count() == 1
 
 
 def test_defaults_batem_com_o_pedido_pelo_usuario(qtbot):

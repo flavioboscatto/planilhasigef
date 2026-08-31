@@ -14,6 +14,7 @@ from PyInstaller.utils.hooks import collect_all
 datas = [
     ("config", "config"),
     ("templates", "templates"),
+    ("assets", "assets"),
 ]
 binaries = []
 hiddenimports = []
@@ -60,25 +61,23 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# onefile: tudo (binários e dados) entra direto no EXE, sem a pasta
+# _internal ao lado — só isso muda de onedir (exclude_binaries=True +
+# COLLECT); o Analysis acima é igual. Efeito colateral aceito: o exe
+# demora um pouco mais pra abrir, porque se autoextrai numa pasta
+# temporária a cada execução.
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     [],
-    exclude_binaries=True,
-    name="SigefWebQt",
+    name="PlanSIGEF",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=True,  # mantém o console aberto por enquanto para ver erro; tirar depois de validar
     disable_windowed_traceback=False,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=False,
-    name="SigefWebQt",
+    icon="assets/icone_app.ico",
 )

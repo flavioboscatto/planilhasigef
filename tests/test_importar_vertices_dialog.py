@@ -1,7 +1,12 @@
 """Testes da Fase 5 (importação de vértices). QFileDialog.getOpenFileName
 é um método estático fácil de simular — diferente do diálogo por
 subprocess do Streamlit local, não precisa de clique manual nem de
-processo à parte pra testar o fluxo inteiro."""
+processo à parte pra testar o fluxo inteiro.
+
+Este diálogo só cuida de arquivo/separador/mapeamento/conversão; o que
+acontece com o resultado (virar uma aba "Importação N" persistente) é
+responsabilidade de quem chama, testada em test_importacao_tab.py e em
+test_perimetro_tab.py."""
 from __future__ import annotations
 
 import json
@@ -11,7 +16,6 @@ from PySide6.QtWidgets import QFileDialog
 
 from ui_qt.importar_vertices_dialog import ImportarVerticesDialog
 from ui_qt.tema_qt import carregar_tema
-from ui_qt.vertices_table import TabelaVerticesView
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 
@@ -21,7 +25,7 @@ def _dominios():
         return json.load(f)
 
 
-def _novo_dialogo(aplicar_versao, meridiano=-51.0, hemisferio="Sul"):
+def _novo_dialogo(criar_aba_importacao, meridiano=-51.0, hemisferio="Sul"):
     dominios = _dominios()
     return ImportarVerticesDialog(
         opcoes_tipo_vertice=[t["codigo"] for t in dominios["tipos_vertice"]],
@@ -33,7 +37,7 @@ def _novo_dialogo(aplicar_versao, meridiano=-51.0, hemisferio="Sul"):
         hemisferio_inicial=hemisferio,
         tema=carregar_tema(),
         casas=dominios["limites_coordenadas"],
-        aplicar_versao=aplicar_versao,
+        criar_aba_importacao=criar_aba_importacao,
     )
 
 
@@ -46,7 +50,7 @@ def test_escolher_arquivo_preenche_previa_e_mapeamento(qtbot, tmp_path, monkeypa
     arquivo.write_text("codigo;lat;long\nAJ4-M-001;-27,50;-48,50\nAJ4-M-002;-27,51;-48,51\n", encoding="utf-8")
     _apontar_arquivo(monkeypatch, arquivo)
 
-    dialogo = _novo_dialogo(lambda df: None)
+    dialogo = _novo_dialogo(lambda *a: None)
     qtbot.addWidget(dialogo)
     dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
 
@@ -56,13 +60,13 @@ def test_escolher_arquivo_preenche_previa_e_mapeamento(qtbot, tmp_path, monkeypa
     assert set(dialogo._combos_mapeamento) == {"codigo", "lat", "long"}
 
 
-def test_criar_versao_geodesica_cria_bloco_pendente_sem_aplicar_ainda(qtbot, tmp_path, monkeypatch):
+def test_criar_versao_geodesica_chama_callback_com_dados_convertidos(qtbot, tmp_path, monkeypatch):
     arquivo = tmp_path / "vertices.csv"
     arquivo.write_text("codigo;lat;long\nAJ4-M-001;27 30 30 S;48 30 30 W\n", encoding="utf-8")
     _apontar_arquivo(monkeypatch, arquivo)
 
-    resultados = []
-    dialogo = _novo_dialogo(resultados.append)
+    chamadas = []
+    dialogo = _novo_dialogo(lambda dados, utm, mer, hem: chamadas.append((dados, utm, mer, hem)))
     qtbot.addWidget(dialogo)
     dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
     dialogo._escolher_arquivo()
@@ -74,65 +78,19 @@ def test_criar_versao_geodesica_cria_bloco_pendente_sem_aplicar_ainda(qtbot, tmp
 
     dialogo._criar_versao()
 
-    assert dialogo.layout_versoes.count() == 1
-    assert resultados == []  # criar versão não aplica nada ainda, só fica pendente
+    assert len(chamadas) == 1
+    dados, dados_utm_brutos, _meridiano, _hemisferio = chamadas[0]
+    assert dados.iloc[0]["codigo"] == "AJ4-M-001"
+    assert dados_utm_brutos is None  # não é UTM: não guarda easting/northing bruto
 
 
-def test_usar_versao_chama_callback_com_dados_convertidos_e_remove_bloco(qtbot, tmp_path, monkeypatch):
-    arquivo = tmp_path / "vertices.csv"
-    arquivo.write_text("codigo;lat;long\nAJ4-M-001;-27,50;-48,50\n", encoding="utf-8")
-    _apontar_arquivo(monkeypatch, arquivo)
-
-    resultados = []
-    dialogo = _novo_dialogo(lambda df, utm=None: resultados.append(df))
-    qtbot.addWidget(dialogo)
-    dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
-    dialogo._escolher_arquivo()
-    dialogo._combos_mapeamento["codigo"].setCurrentText("Código do vértice")
-    dialogo._combos_mapeamento["lat"].setCurrentText("N / Latitude")
-    dialogo._combos_mapeamento["long"].setCurrentText("E / Longitude")
-    dialogo.combo_sistema.setCurrentText("Geodésica")
-    dialogo.combo_formato_geo.setCurrentText("Decimal (grau decimal, ex.: -27,508333)")
-    dialogo._criar_versao()
-
-    bloco = dialogo.layout_versoes.itemAt(0).widget()
-    vista = bloco.findChild(TabelaVerticesView)
-    dialogo._usar_versao(vista.model(), bloco, None)
-
-    assert len(resultados) == 1
-    assert resultados[0].iloc[0]["codigo"] == "AJ4-M-001"
-    assert dialogo.layout_versoes.count() == 0
-
-
-def test_remover_versao_descarta_sem_chamar_callback(qtbot, tmp_path, monkeypatch):
-    arquivo = tmp_path / "vertices.csv"
-    arquivo.write_text("codigo;lat;long\nAJ4-M-001;-27,50;-48,50\n", encoding="utf-8")
-    _apontar_arquivo(monkeypatch, arquivo)
-
-    resultados = []
-    dialogo = _novo_dialogo(resultados.append)
-    qtbot.addWidget(dialogo)
-    dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
-    dialogo._escolher_arquivo()
-    dialogo._combos_mapeamento["codigo"].setCurrentText("Código do vértice")
-    dialogo._combos_mapeamento["lat"].setCurrentText("N / Latitude")
-    dialogo._combos_mapeamento["long"].setCurrentText("E / Longitude")
-    dialogo.combo_formato_geo.setCurrentText("Decimal (grau decimal, ex.: -27,508333)")
-    dialogo._criar_versao()
-
-    bloco = dialogo.layout_versoes.itemAt(0).widget()
-    dialogo._remover_versao(bloco)
-
-    assert dialogo.layout_versoes.count() == 0
-    assert resultados == []
-
-
-def test_recalcular_geodesica_utm_usa_hemisferio_atual_nao_o_inicial(qtbot, tmp_path, monkeypatch):
+def test_criar_versao_utm_repassa_easting_northing_bruto_e_meridiano_hemisferio_atuais(qtbot, tmp_path, monkeypatch):
     arquivo = tmp_path / "vertices.csv"
     arquivo.write_text("codigo;x;y\nAJ4-M-001;500000;7000000\n", encoding="utf-8")
     _apontar_arquivo(monkeypatch, arquivo)
 
-    dialogo = _novo_dialogo(lambda df: None, meridiano=-51.0, hemisferio="Norte")  # errado de propósito
+    chamadas = []
+    dialogo = _novo_dialogo(lambda dados, utm, mer, hem: chamadas.append((dados, utm, mer, hem)), meridiano=-51.0, hemisferio="Sul")
     qtbot.addWidget(dialogo)
     dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
     dialogo._escolher_arquivo()
@@ -142,22 +100,14 @@ def test_recalcular_geodesica_utm_usa_hemisferio_atual_nao_o_inicial(qtbot, tmp_
     dialogo.combo_sistema.setCurrentText("UTM")
 
     dialogo._criar_versao()
-    bloco = dialogo.layout_versoes.itemAt(0).widget()
-    vista = bloco.findChild(TabelaVerticesView)
-    modelo = vista.model()
-    latitude_com_hemisferio_errado = modelo.dataframe().at[0, "n_lat"]
 
-    # percebe o erro, corrige o hemisfério e recalcula sem reimportar nada
-    dialogo.combo_hemisferio.setCurrentText("Sul")
-    from PySide6.QtWidgets import QPushButton
-    botao = next(b for b in bloco.findChildren(QPushButton) if "Recalcular" in b.text())
-    botao.click()
-
-    latitude_corrigida = modelo.dataframe().at[0, "n_lat"]
-    assert latitude_corrigida != latitude_com_hemisferio_errado
-    # hemisfério Sul, mesma linha de easting/northing: latitude tem que ser negativa
-    from core.parsing import parse_numero
-    assert parse_numero(latitude_corrigida) < 0
+    assert len(chamadas) == 1
+    dados, dados_utm_brutos, meridiano, hemisferio = chamadas[0]
+    assert dados_utm_brutos is not None
+    assert dados_utm_brutos.iloc[0]["e_long"] == "500000"
+    assert dados_utm_brutos.iloc[0]["n_lat"] == "7000000"
+    assert meridiano == -51.0
+    assert hemisferio == "Sul"
 
 
 def test_utm_sem_colunas_de_coordenada_nao_trava_so_avisa(qtbot, tmp_path, monkeypatch):
@@ -165,7 +115,8 @@ def test_utm_sem_colunas_de_coordenada_nao_trava_so_avisa(qtbot, tmp_path, monke
     arquivo.write_text("codigo;obs\nAJ4-M-001;nota\n", encoding="utf-8")
     _apontar_arquivo(monkeypatch, arquivo)
 
-    dialogo = _novo_dialogo(lambda df: None)
+    chamadas = []
+    dialogo = _novo_dialogo(lambda *a: chamadas.append(a))
     qtbot.addWidget(dialogo)
     dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
     dialogo._escolher_arquivo()
@@ -174,4 +125,4 @@ def test_utm_sem_colunas_de_coordenada_nao_trava_so_avisa(qtbot, tmp_path, monke
 
     dialogo._criar_versao()  # sem e_long/n_lat mapeados: cai no caminho "sem coordenada", não quebra
 
-    assert dialogo.layout_versoes.count() == 1
+    assert len(chamadas) == 1
