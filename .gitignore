@@ -16,6 +16,8 @@ env/
 
 # Saída gerada, não versionada
 tools/out/
+build/
+dist/
 
 # SO
 .DS_Store

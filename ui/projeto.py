@@ -8,17 +8,28 @@ Grava a Identificação (nome, CPF/CNPJ, matrícula) no arquivo — exceção
 deliberada à regra 6 do CLAUDE.md, só porque é o próprio profissional quem
 decide salvar/abrir, nunca automático (ver core/projeto.py).
 
-Salvar = st.download_button (o navegador grava no Downloads da pessoa) e
-Abrir = st.file_uploader (a pessoa escolhe o arquivo pelo seletor do
-próprio navegador) — nunca um caminho de disco do servidor. Chegamos a usar
-diálogo nativo do Windows via subprocess (funcionava só rodando localmente,
-na máquina do profissional); trocamos ao publicar em hospedagem remota
-(Render), onde não existe tela nem acesso ao disco de quem está usando.
-Efeito colateral aceito: não existe mais "Salvar" (sobrescrever o mesmo
-arquivo) — todo Salvar é um novo download; o navegador decide se sobrescreve
-ou cria "(1)", "(2)" etc.
+Diálogo nativo do SO via subprocess, não st.download_button/file_uploader:
+chegamos a usar download/upload pelo navegador pra publicar numa hospedagem
+remota (Render), mas o projeto voltou a ser 100% local (distribuído como
+.exe — ver PLANO_SIGEF_WEB.md) e diálogo nativo dá de volta o "Salvar"
+de verdade (regrava o mesmo arquivo), sem a limitação de download sempre
+criar um arquivo novo.
+
+tkinter não é thread-safe e o Streamlit roda o script de cada sessão numa
+thread própria (não a principal) — chamar tk.Tk() direto dali dá diálogo
+que às vezes nem aparece. Rodar num processo Python à parte (dialogo_arquivo.py,
+na raiz do projeto) elimina isso: cada chamada nasce com sua própria thread
+principal, que é onde o Tcl/Tk exige rodar.
+
+No .exe empacotado (PyInstaller) não existe um "python.exe" à parte pra
+rodar dialogo_arquivo.py — main_exe.py reconhece a flag --dialogo-arquivo e
+reinvoca o próprio executável nesse modo (ver comentário em _rodar_dialogo).
 """
 from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -26,6 +37,32 @@ import streamlit as st
 from core.models import Identificacao, Perimetro
 from core.projeto import ProjetoInvalidoError, desserializar, serializar
 from ui.aba_perimetro import _COLUNAS_VERTICE, _linha_para_vertice, _preenchido, _tabela_vazia
+
+_RAIZ_PROJETO = Path(__file__).resolve().parent.parent
+
+
+def _rodar_dialogo(*args: str) -> str | None:
+    if getattr(sys, "frozen", False):
+        comando = [sys.executable, "--dialogo-arquivo", *args]
+    else:
+        comando = [sys.executable, str(_RAIZ_PROJETO / "dialogo_arquivo.py"), *args]
+    resultado = subprocess.run(
+        comando,
+        capture_output=True,
+        text=True,
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+    )
+    caminho = resultado.stdout.strip()
+    return caminho or None
+
+
+def _dialogo_salvar_como(nome_sugerido: str) -> str | None:
+    return _rodar_dialogo("salvar-como", nome_sugerido)
+
+
+def _dialogo_abrir() -> str | None:
+    return _rodar_dialogo("abrir")
+
 
 _CAMPOS_IDENTIFICACAO = list(Identificacao.model_fields)
 _CHAVE_IDENT = {campo: f"ident_{campo}" for campo in _CAMPOS_IDENTIFICACAO}
@@ -157,21 +194,43 @@ def _aplicar_projeto(dados: dict) -> None:
     st.session_state["projeto_nome"] = dados.get("nome_projeto", "")
 
 
-def _processar_upload(arquivo, chave_marca: str) -> None:
-    """Aplica um .sigefproj vindo de st.file_uploader uma única vez por
-    arquivo — o widget mantém o arquivo "selecionado" entre execuções, então
-    sem marcar o que já foi processado (file_id, único por upload) o projeto
-    seria reaplicado a cada rerun, atropelando qualquer edição feita depois
-    de abrir."""
-    if arquivo is None or st.session_state.get(chave_marca) == arquivo.file_id:
+def _salvar(dominios: dict, caminho: str | None) -> None:
+    """Grava direto no `caminho` já escolhido antes (Salvar Como/Abrir) —
+    sem diálogo, é o que faz o botão Salvar ir atualizando o mesmo arquivo
+    a cada clique. Sem caminho ainda, cai pra Salvar Como."""
+    if not caminho:
+        _salvar_como(dominios)
         return
-    st.session_state[chave_marca] = arquivo.file_id
+    conteudo = serializar(_montar_projeto(dominios))
     try:
-        dados = desserializar(arquivo.getvalue())
-    except ProjetoInvalidoError as exc:
-        st.error(f"Não consegui abrir o arquivo: {exc}")
+        Path(caminho).write_bytes(conteudo)
+    except OSError as exc:
+        st.error(f"Não consegui salvar em {caminho}: {exc}")
+    else:
+        st.session_state["projeto_caminho"] = caminho
+        st.toast(f"Projeto salvo em {caminho}")
+
+
+def _salvar_como(dominios: dict) -> None:
+    nome_sugerido = st.session_state.get("projeto_nome") or "projeto_sigef"
+    caminho = _dialogo_salvar_como(nome_sugerido)
+    if not caminho:
         return
-    _aplicar_projeto(dados)
+    st.session_state["projeto_nome"] = Path(caminho).stem
+    _salvar(dominios, caminho)
+
+
+def _abrir() -> None:
+    caminho = _dialogo_abrir()
+    if not caminho:
+        return
+    try:
+        dados = desserializar(Path(caminho).read_bytes())
+        _aplicar_projeto(dados)
+    except (ProjetoInvalidoError, OSError) as exc:
+        st.error(f"Não consegui abrir {caminho}: {exc}")
+        return
+    st.session_state["projeto_caminho"] = caminho
     st.session_state["projeto_aberto"] = True
     st.rerun()
 
@@ -184,57 +243,74 @@ def render_gate() -> bool:
 
     st.subheader("Comece um projeto")
     st.caption(
-        "Tudo o que você preencher fica só nesta sessão até você baixar o "
-        "projeto — o arquivo .sigefproj é a única forma de continuar "
-        "depois, inclusive a Identificação. Guarde-o com o mesmo cuidado "
-        "que um documento do serviço."
+        "Tudo o que você preencher fica só nesta sessão até você salvar — "
+        "o arquivo .sigefproj é a única forma de continuar depois, "
+        "inclusive a Identificação. Guarde-o com o mesmo cuidado que um "
+        "documento do serviço."
     )
     aba_novo, aba_abrir = st.tabs(["Novo projeto", "Abrir projeto (.sigefproj)"])
 
     with aba_novo:
         nome = st.text_input("Nome do projeto", key="gate_nome_novo")
         st.caption(
-            "Cria o projeto nesta sessão — use \"Baixar projeto\" na barra "
-            "lateral sempre que quiser salvar um ponto pra continuar depois."
+            "Ao criar, abre o diálogo do Windows pra você escolher a pasta "
+            "de uma vez — se cancelar, o projeto continua, só sem lugar "
+            "salvo ainda (dá pra usar Salvar Como depois, na barra lateral)."
         )
         if st.button("Criar projeto", type="primary"):
-            st.session_state["projeto_nome"] = nome.strip() or "projeto_sigef"
+            nome_final = nome.strip() or "projeto_sigef"
+            st.session_state["projeto_nome"] = nome_final
+            caminho = _dialogo_salvar_como(nome_final)
+            if caminho:
+                dados_iniciais = {
+                    "nome_projeto": Path(caminho).stem,
+                    "identificacao": {},
+                    "num_parcelas": 1,
+                    "parcelas": [{"vertices": []}],
+                    "numeracao": {},
+                }
+                try:
+                    Path(caminho).write_bytes(serializar(dados_iniciais))
+                except OSError as exc:
+                    st.error(f"Não consegui salvar em {caminho}: {exc}")
+                else:
+                    st.session_state["projeto_nome"] = Path(caminho).stem
+                    st.session_state["projeto_caminho"] = caminho
             st.session_state["projeto_aberto"] = True
             st.rerun()
 
     with aba_abrir:
-        st.caption("Escolha o arquivo .sigefproj salvo anteriormente.")
-        arquivo = st.file_uploader(
-            "Arquivo .sigefproj", type=["sigefproj"], key="gate_upload_abrir"
-        )
-        _processar_upload(arquivo, "_gate_upload_processado")
+        st.caption("Abre o diálogo do Windows para escolher o arquivo .sigefproj.")
+        if st.button("Abrir projeto...", type="primary"):
+            caminho = _dialogo_abrir()
+            if caminho:
+                try:
+                    dados = desserializar(Path(caminho).read_bytes())
+                    _aplicar_projeto(dados)
+                except (ProjetoInvalidoError, OSError) as exc:
+                    st.error(f"Não consegui abrir {caminho}: {exc}")
+                else:
+                    st.session_state["projeto_caminho"] = caminho
+                    st.session_state["projeto_aberto"] = True
+                    st.rerun()
 
     return False
 
 
 def render_barra_lateral(dominios: dict) -> None:
     """Salvar/abrir projeto — sempre visível na barra lateral depois que o
-    gate libera o app. Salvar baixa o .sigefproj pelo navegador (não existe
-    caminho de disco do servidor pra reescrever); Abrir troca o projeto
-    atual por outro arquivo escolhido pelo seletor do navegador."""
+    gate libera o app. Diálogos nativos do SO (ver _dialogo_*): Salvar
+    regrava direto no arquivo já escolhido, sem perguntar de novo."""
     st.divider()
-    nome_projeto = st.session_state.get("projeto_nome") or "projeto_sigef"
-    conteudo = serializar(_montar_projeto(dominios))
-    st.download_button(
-        "⬇️ Baixar projeto (.sigefproj)",
-        data=conteudo,
-        file_name=f"{nome_projeto}.sigefproj",
-        mime="application/octet-stream",
-        use_container_width=True,
-    )
-    st.caption(
-        "O navegador salva na pasta de Downloads — configure-o para "
-        "perguntar onde salvar se quiser escolher a pasta toda vez."
-    )
+    caminho_atual = st.session_state.get("projeto_caminho")
+    if caminho_atual:
+        st.caption(f"📄 {Path(caminho_atual).name}")
+    else:
+        st.caption("Projeto ainda sem arquivo salvo.")
 
-    with st.expander("📂 Abrir outro projeto (.sigefproj)"):
-        arquivo = st.file_uploader(
-            "Arquivo .sigefproj", type=["sigefproj"], key="barra_upload_abrir"
-        )
-        st.caption("Substitui tudo o que está preenchido agora nesta sessão.")
-        _processar_upload(arquivo, "_barra_upload_processado")
+    if st.button("💾 Salvar", use_container_width=True):
+        _salvar(dominios, caminho_atual)
+    if st.button("🗂️ Salvar como...", use_container_width=True):
+        _salvar_como(dominios)
+    if st.button("📂 Abrir...", use_container_width=True):
+        _abrir()
