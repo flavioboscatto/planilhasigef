@@ -19,9 +19,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.importacao import mesclar_por_codigo
 from core.models import Perimetro
 from core.tabela_vertices import linha_para_vertice, preenchido, vertice_para_linha
 from core.validators.geometria import reordena_norte_horario
+from ui_qt.importar_vertices_dialog import ImportarVerticesDialog
 from ui_qt.tema_qt import Papel, titulo_secao
 from ui_qt.vertices_table import TabelaVerticesModel, TabelaVerticesView
 
@@ -50,6 +52,7 @@ class AbaPerimetro(QWidget):
         super().__init__()
         self.indice = indice
         self._dominios = dominios
+        self._tema = tema
 
         opcoes_tipo_vertice = [t["codigo"] for t in dominios["tipos_vertice"]]
         opcoes_metodo = [m["codigo"] for m in dominios["metodos_posicionamento"]]
@@ -78,6 +81,10 @@ class AbaPerimetro(QWidget):
         linha_cabecalho.addLayout(_form("Meridiano Central (°)", self.meridiano_central))
         linha_cabecalho.addLayout(_form("Hemisfério", self.hemisferio))
         layout.addLayout(linha_cabecalho)
+
+        btn_importar = QPushButton("Importar vértices de um arquivo (TXT/CSV)...")
+        btn_importar.clicked.connect(self._abrir_importador)
+        layout.addWidget(btn_importar)
 
         layout.addWidget(
             QLabel(
@@ -171,6 +178,25 @@ class AbaPerimetro(QWidget):
             nova["renumerar"] = renumerar_por_id[id(v)]
             novas_linhas.append(nova)
         self.modelo_tabela.substituir(pd.DataFrame(novas_linhas))
+
+    def _abrir_importador(self) -> None:
+        dialogo = ImportarVerticesDialog(
+            opcoes_tipo_vertice=[t["codigo"] for t in self._dominios["tipos_vertice"]],
+            opcoes_metodo=[m["codigo"] for m in self._dominios["metodos_posicionamento"]],
+            opcoes_limite=[t["codigo"] for t in self._dominios["tipos_limite"]],
+            meridiano_central=float(self.meridiano_central.currentText()),
+            hemisferio=self.hemisferio.currentText(),
+            tema=self._tema,
+            aplicar_versao=self._aplicar_versao_importada,
+            parent=self,
+        )
+        dialogo.exec()
+
+    def _aplicar_versao_importada(self, dados_importados: pd.DataFrame) -> None:
+        tabela_mesclada, avisos = mesclar_por_codigo(self.modelo_tabela.dataframe(), dados_importados)
+        self.modelo_tabela.substituir(tabela_mesclada)
+        for aviso in avisos:
+            QMessageBox.warning(self, "Importar vértices", aviso)
 
     def modelo(self) -> Perimetro:
         df = self.modelo_tabela.dataframe()
