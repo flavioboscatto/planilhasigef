@@ -1,16 +1,17 @@
 """Carrega o modelo oficial do ODS a partir da cópia local em templates/,
 conferindo o hash contra manifest.json.
 
-Único módulo de core/ que pode importar streamlit — os demais devem rodar em
-teste puro, sem essa dependência (ver CLAUDE.md).
+Sem streamlit nem nenhum outro framework de UI — core/ roda em teste puro
+(CLAUDE.md). Cache simples em memória (funools.lru_cache): os bytes do
+template não mudam durante a execução do programa, então basta ler o
+arquivo uma vez por processo.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+from functools import lru_cache
 from pathlib import Path
-
-import streamlit as st
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 MANIFEST_PATH = TEMPLATES_DIR / "manifest.json"
@@ -29,11 +30,11 @@ def _sha256(dados: bytes) -> str:
     return hashlib.sha256(dados).hexdigest()
 
 
-@st.cache_resource
+@lru_cache(maxsize=1)
 def load_template() -> bytes:
     """Retorna os bytes do ODS oficial, validados contra o manifest.
 
-    Só cópia local (sem tentativa de rede): o app agora roda localmente,
+    Só cópia local (sem tentativa de rede): o app roda localmente,
     inclusive em campo sem internet — uma tentativa de download que sempre
     falharia (ou demorasse pra falhar) só atrasaria a abertura à toa. O
     hash continua conferido contra manifest.json — rejeita divergência

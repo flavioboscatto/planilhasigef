@@ -1,0 +1,14 @@
+# Versão desktop nativo (PySide6), em construção ao lado da versão
+# Streamlit (requirements.txt) — ver PLANO_SIGEF_WEB.md / plano de migração.
+# Vira o requirements.txt definitivo quando a migração terminar (Fase 9).
+PySide6==6.11.2
+lxml==6.1.1
+pydantic==2.13.4
+pyproj==3.7.2
+shapely==2.1.2
+pyyaml==6.0.3
+pandas==3.0.3
+
+# testes
+pytest==9.1.1
+pytest-qt==4.5.0
