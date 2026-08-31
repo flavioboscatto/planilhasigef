@@ -20,14 +20,19 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QMainWindow,
     QMessageBox,
     QTabWidget,
     QToolBar,
 )
 
+from core import ods_writer
+from core.projeto import ProjetoInvalidoError, desserializar, serializar
+from core.template_loader import load_template
 from ui_qt.identificacao_tab import AbaIdentificacao
 from ui_qt.perimetro_tab import AbaPerimetro
+from ui_qt.projeto_qt import aplicar_projeto, montar_projeto
 from ui_qt.renumeracao_panel import PainelNumeracao
 from ui_qt.tema_qt import carregar_tema
 
@@ -46,6 +51,8 @@ class JanelaPrincipal(QMainWindow):
         self.resize(1100, 800)
 
         self._proxima_parcela = 1
+        self.nome_projeto = ""
+        self.caminho_projeto: str | None = None
         self.dominios = _carregar_json("dominios.json")
         self.municipios = _carregar_json("municipios.json")
         self.tema = carregar_tema()
@@ -69,23 +76,23 @@ class JanelaPrincipal(QMainWindow):
         menu_arquivo = self.menuBar().addMenu("&Arquivo")
 
         acao_novo = menu_arquivo.addAction("Novo projeto")
-        acao_novo.triggered.connect(self._nao_implementado)
+        acao_novo.triggered.connect(self._novo_projeto)
 
         acao_abrir = menu_arquivo.addAction("Abrir...")
-        acao_abrir.triggered.connect(self._nao_implementado)
+        acao_abrir.triggered.connect(self._abrir_projeto)
 
         menu_arquivo.addSeparator()
 
         acao_salvar = menu_arquivo.addAction("Salvar")
-        acao_salvar.triggered.connect(self._nao_implementado)
+        acao_salvar.triggered.connect(self._salvar_projeto)
 
         acao_salvar_como = menu_arquivo.addAction("Salvar como...")
-        acao_salvar_como.triggered.connect(self._nao_implementado)
+        acao_salvar_como.triggered.connect(self._salvar_projeto_como)
 
         menu_arquivo.addSeparator()
 
         acao_gerar = menu_arquivo.addAction("Gerar planilha SIGEF (.ods)...")
-        acao_gerar.triggered.connect(self._nao_implementado)
+        acao_gerar.triggered.connect(self._gerar_planilha)
 
         menu_arquivo.addSeparator()
 
@@ -124,8 +131,87 @@ class JanelaPrincipal(QMainWindow):
         self.abas.removeTab(ultimo_indice)
         widget.deleteLater()
 
-    def _nao_implementado(self) -> None:
-        QMessageBox.information(self, "Em construção", "Esta ação chega numa fase futura da migração.")
+    def _gerar_planilha(self) -> None:
+        identificacao = self.aba_identificacao.modelo()
+        perimetros = [aba.modelo() for aba in self._abas_perimetro()]
+        try:
+            saida = ods_writer.write(identificacao, perimetros, load_template())
+        except Exception as exc:  # noqa: BLE001 — qualquer falha de geração vira mensagem, não crash
+            QMessageBox.critical(self, "Gerar planilha", f"Não consegui gerar a planilha: {exc}")
+            return
+
+        caminho, _ = QFileDialog.getSaveFileName(
+            self, "Salvar planilha SIGEF", "sigef_gerado.ods", "Planilha ODS (*.ods);;Todos os arquivos (*.*)"
+        )
+        if not caminho:
+            return
+        try:
+            Path(caminho).write_bytes(saida)
+        except OSError as exc:
+            QMessageBox.critical(self, "Gerar planilha", f"Não consegui salvar em {caminho}: {exc}")
+            return
+        QMessageBox.information(
+            self, "Gerar planilha",
+            f"Planilha gerada ({len(saida)} bytes) em {caminho}.\nConfira no LibreOffice com F3.",
+        )
+
+    def _atualizar_titulo(self) -> None:
+        nome = Path(self.caminho_projeto).name if self.caminho_projeto else "sem arquivo salvo"
+        self.setWindowTitle(f"Gerador de Planilha SIGEF — {nome}")
+
+    def _novo_projeto(self) -> None:
+        resposta = QMessageBox.question(
+            self, "Novo projeto",
+            "Isso substitui tudo o que está preenchido agora, sem salvar antes. Continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if resposta != QMessageBox.StandardButton.Yes:
+            return
+        aplicar_projeto(self, {"identificacao": {}, "num_parcelas": 1, "parcelas": [{"vertices": []}], "numeracao": {}})
+        self.caminho_projeto = None
+        self._atualizar_titulo()
+
+    def _abrir_projeto(self) -> None:
+        caminho, _ = QFileDialog.getOpenFileName(
+            self, "Abrir projeto SIGEF", "", "Projeto SIGEF (*.sigefproj);;Todos os arquivos (*.*)"
+        )
+        if not caminho:
+            return
+        try:
+            dados = desserializar(Path(caminho).read_bytes())
+        except (ProjetoInvalidoError, OSError) as exc:
+            QMessageBox.critical(self, "Abrir projeto", f"Não consegui abrir {caminho}: {exc}")
+            return
+        aplicar_projeto(self, dados)
+        self.caminho_projeto = caminho
+        self._atualizar_titulo()
+
+    def _salvar_projeto(self) -> None:
+        if not self.caminho_projeto:
+            self._salvar_projeto_como()
+            return
+        try:
+            Path(self.caminho_projeto).write_bytes(serializar(montar_projeto(self)))
+        except OSError as exc:
+            QMessageBox.critical(self, "Salvar projeto", f"Não consegui salvar em {self.caminho_projeto}: {exc}")
+            return
+        self.statusBar().showMessage(f"Projeto salvo em {self.caminho_projeto}", 5000)
+
+    def _salvar_projeto_como(self) -> None:
+        sugestao = f"{self.nome_projeto or 'projeto_sigef'}.sigefproj"
+        caminho, _ = QFileDialog.getSaveFileName(
+            self, "Salvar projeto SIGEF como", sugestao, "Projeto SIGEF (*.sigefproj);;Todos os arquivos (*.*)"
+        )
+        if not caminho:
+            return
+        self.nome_projeto = Path(caminho).stem
+        self.caminho_projeto = caminho
+        try:
+            Path(caminho).write_bytes(serializar(montar_projeto(self)))
+        except OSError as exc:
+            QMessageBox.critical(self, "Salvar projeto", f"Não consegui salvar em {caminho}: {exc}")
+            return
+        self._atualizar_titulo()
 
 
 def main() -> None:
