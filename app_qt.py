@@ -17,6 +17,7 @@ import json
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from ui_qt.identificacao_tab import AbaIdentificacao
 from ui_qt.perimetro_tab import AbaPerimetro
+from ui_qt.renumeracao_panel import PainelNumeracao
 from ui_qt.tema_qt import carregar_tema
 
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
@@ -56,6 +58,12 @@ class JanelaPrincipal(QMainWindow):
 
         self._adicionar_aba_identificacao()
         self._adicionar_aba_parcela()
+
+        self.painel_numeracao = PainelNumeracao(self.dominios, self._abas_perimetro)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.painel_numeracao)
+
+    def _abas_perimetro(self) -> list[AbaPerimetro]:
+        return [self.abas.widget(i) for i in range(1, self.abas.count())]
 
     def _criar_menu(self) -> None:
         menu_arquivo = self.menuBar().addMenu("&Arquivo")
