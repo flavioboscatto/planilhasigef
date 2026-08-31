@@ -109,6 +109,17 @@ class TabelaVerticesModel(QAbstractTableModel):
             baixo_dir = self.index(len(self._df) - 1, coluna)
             self.dataChanged.emit(topo_esq, baixo_dir, [Qt.ItemDataRole.DisplayRole])
 
+    def definir_coluna_valores(self, campo: str, valores: list) -> None:
+        """Como definir_coluna, mas um valor por linha (não o mesmo valor
+        repetido) — usado pra recalcular E/Long e N/Lat de uma importação
+        UTM sem mexer nas outras colunas já editadas na grade."""
+        coluna = COLUNAS_VERTICE.index(campo)
+        self._df[campo] = list(valores)
+        if len(self._df):
+            topo_esq = self.index(0, coluna)
+            baixo_dir = self.index(len(self._df) - 1, coluna)
+            self.dataChanged.emit(topo_esq, baixo_dir, [Qt.ItemDataRole.DisplayRole])
+
     # --- QAbstractTableModel ---
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:

@@ -105,6 +105,9 @@ def test_novo_projeto_reseta_apos_confirmacao(qtbot, monkeypatch):
     monkeypatch.setattr(
         QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes
     )
+    # Novo projeto já abre "Salvar como" em seguida (pedido do usuário);
+    # simula cancelar esse diálogo pra não travar esperando um real.
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: ("", "")))
     janela = JanelaPrincipal()
     qtbot.addWidget(janela)
     janela.aba_identificacao.nome.setText("Algo preenchido")

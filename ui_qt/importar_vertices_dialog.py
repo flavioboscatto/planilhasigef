@@ -73,8 +73,10 @@ class ImportarVerticesDialog(QDialog):
         opcoes_tipo_vertice: list[str],
         opcoes_metodo: list[str],
         opcoes_limite: list[str],
-        meridiano_central: float,
-        hemisferio: str,
+        meridianos_disponiveis: list[int],
+        hemisferios_disponiveis: list[str],
+        meridiano_inicial: float,
+        hemisferio_inicial: str,
         tema: dict,
         aplicar_versao,
         parent=None,
@@ -85,8 +87,8 @@ class ImportarVerticesDialog(QDialog):
         self._opcoes_tipo_vertice = opcoes_tipo_vertice
         self._opcoes_metodo = opcoes_metodo
         self._opcoes_limite = opcoes_limite
-        self._meridiano_central = meridiano_central
-        self._hemisferio = hemisferio
+        self._meridianos_disponiveis = meridianos_disponiveis
+        self._hemisferios_disponiveis = hemisferios_disponiveis
         self._tema = tema
         self._aplicar_versao = aplicar_versao
         self._df_bruto: pd.DataFrame | None = None
@@ -146,7 +148,31 @@ class ImportarVerticesDialog(QDialog):
         linha_sistema.addWidget(self.combo_sistema)
         linha_sistema.addWidget(self.combo_formato_geo)
         layout_geral.addLayout(linha_sistema)
-        self.aviso_utm = QLabel()
+
+        # Meridiano/Hemisfério ficam editáveis aqui dentro (não só uma
+        # referência fixa ao que estava na aba Perímetro quando o diálogo
+        # abriu) — errou a escolha? Troca aqui e usa "Recalcular geodésica"
+        # em cada versão pendente, sem precisar reimportar o arquivo do zero.
+        self.linha_utm = QWidget()
+        layout_linha_utm = QHBoxLayout(self.linha_utm)
+        layout_linha_utm.setContentsMargins(0, 0, 0, 0)
+        self.combo_meridiano = QComboBox()
+        self.combo_meridiano.addItems([str(m) for m in meridianos_disponiveis])
+        self.combo_meridiano.setCurrentText(str(int(meridiano_inicial)))
+        self.combo_hemisferio = QComboBox()
+        self.combo_hemisferio.addItems(hemisferios_disponiveis)
+        self.combo_hemisferio.setCurrentText(hemisferio_inicial)
+        layout_linha_utm.addWidget(QLabel("Meridiano Central (°):"))
+        layout_linha_utm.addWidget(self.combo_meridiano)
+        layout_linha_utm.addWidget(QLabel("Hemisfério:"))
+        layout_linha_utm.addWidget(self.combo_hemisferio)
+        layout_geral.addWidget(self.linha_utm)
+
+        self.aviso_utm = QLabel(
+            "Zona/hemisfério errado aqui sai sem aviso: o número parece válido, só "
+            "que aponta pro lugar errado. Se perceber depois de criar a versão, "
+            "corrija aqui e use \"Recalcular geodésica\" na versão pendente."
+        )
         self.aviso_utm.setWordWrap(True)
         self.aviso_utm.setVisible(False)
         self.combo_sistema.currentTextChanged.connect(self._atualizar_aviso_utm)
@@ -218,12 +244,7 @@ class ImportarVerticesDialog(QDialog):
 
     def _atualizar_aviso_utm(self, sistema: str) -> None:
         self.combo_formato_geo.setVisible(sistema == "Geodésica")
-        if sistema == "UTM":
-            self.aviso_utm.setText(
-                f"Confira antes de criar a versão: Meridiano Central = {self._meridiano_central}° "
-                f"e Hemisfério = {self._hemisferio} (campos no topo da aba Perímetro) — é isso que a "
-                "conversão UTM → geodésica vai usar. Zona errada aqui sai sem aviso."
-            )
+        self.linha_utm.setVisible(sistema == "UTM")
         self.aviso_utm.setVisible(sistema == "UTM")
 
     # --- criar versão ---
@@ -235,20 +256,26 @@ class ImportarVerticesDialog(QDialog):
             if _CAMPOS_VERTICE[combo.currentText()] is not None
         }
 
+    def _converter_utm(self, easting_col, northing_col, meridiano: float, hemisferio: str) -> tuple[list[str], list[str]]:
+        longitudes, latitudes = [], []
+        for easting_txt, northing_txt in zip(easting_col, northing_col):
+            longitude, latitude = utm_para_geodesica(
+                parse_numero(easting_txt), parse_numero(northing_txt), meridiano, hemisferio,
+            )
+            longitudes.append(longitude)
+            latitudes.append(latitude)
+        return (
+            [normaliza_decimal(str(v)) for v in longitudes],
+            [normaliza_decimal(str(v)) for v in latitudes],
+        )
+
     def _converter_coordenadas(self, dados: pd.DataFrame, sistema: str) -> None:
         if sistema == "UTM":
             if not {"e_long", "n_lat"} <= set(dados.columns):
                 raise ValueError("importação em UTM precisa das colunas de E/Long e N/Lat juntas")
-            longitudes, latitudes = [], []
-            for easting_txt, northing_txt in zip(dados["e_long"], dados["n_lat"]):
-                longitude, latitude = utm_para_geodesica(
-                    parse_numero(easting_txt), parse_numero(northing_txt),
-                    self._meridiano_central, self._hemisferio,
-                )
-                longitudes.append(longitude)
-                latitudes.append(latitude)
-            dados["e_long"] = [normaliza_decimal(str(v)) for v in longitudes]
-            dados["n_lat"] = [normaliza_decimal(str(v)) for v in latitudes]
+            meridiano = float(self.combo_meridiano.currentText())
+            hemisferio = self.combo_hemisferio.currentText()
+            dados["e_long"], dados["n_lat"] = self._converter_utm(dados["e_long"], dados["n_lat"], meridiano, hemisferio)
             return
 
         parser = _PARSERS_GEODESICA[self.combo_formato_geo.currentText()]
@@ -271,9 +298,15 @@ class ImportarVerticesDialog(QDialog):
 
         dados = self._df_bruto.rename(columns=mapeamento)[list(mapeamento.values())].copy()
         tem_coordenada = {"e_long", "n_lat"} & set(dados.columns)
+        sistema = self.combo_sistema.currentText()
+        # guarda o E/Long e N/Lat originais (easting/northing) ANTES de
+        # sobrescrever com o resultado da conversão — sem isso, perceber
+        # que o hemisfério estava errado depois de criar a versão não tem
+        # conserto: o dado de origem já teria sido descartado.
+        dados_utm_brutos = dados[["e_long", "n_lat"]].copy() if (tem_coordenada and sistema == "UTM") else None
         if tem_coordenada:
             try:
-                self._converter_coordenadas(dados, self.combo_sistema.currentText())
+                self._converter_coordenadas(dados, sistema)
             except (ValorInvalidoError, ValueError) as exc:
                 QMessageBox.critical(self, "Importar vértices", f"Não consegui interpretar as coordenadas: {exc}")
                 return
@@ -282,9 +315,9 @@ class ImportarVerticesDialog(QDialog):
             if campo in _CAMPOS_NUMERICOS:
                 dados[campo] = dados[campo].map(normaliza_decimal)
 
-        self._adicionar_versao(dados)
+        self._adicionar_versao(dados, dados_utm_brutos)
 
-    def _adicionar_versao(self, dados: pd.DataFrame) -> None:
+    def _adicionar_versao(self, dados: pd.DataFrame, dados_utm_brutos: pd.DataFrame | None = None) -> None:
         id_versao = self._proximo_id_versao
         self._proximo_id_versao += 1
 
@@ -300,7 +333,8 @@ class ImportarVerticesDialog(QDialog):
             df=dados,
         )
         vista = TabelaVerticesView(modelo)
-        vista.setMaximumHeight(200)
+        vista.setMinimumHeight(170)
+        vista.setMaximumHeight(260)
         layout_bloco.addWidget(vista)
 
         linha_botoes = QHBoxLayout()
@@ -310,9 +344,27 @@ class ImportarVerticesDialog(QDialog):
         btn_remover.clicked.connect(lambda: self._remover_versao(bloco))
         linha_botoes.addWidget(btn_usar)
         linha_botoes.addWidget(btn_remover)
+        if dados_utm_brutos is not None:
+            btn_recalcular = QPushButton("🔄 Recalcular geodésica (Meridiano/Hemisfério acima)")
+            btn_recalcular.clicked.connect(lambda: self._recalcular_versao(modelo, dados_utm_brutos))
+            linha_botoes.addWidget(btn_recalcular)
         layout_bloco.addLayout(linha_botoes)
 
         self.layout_versoes.addWidget(bloco)
+
+    def _recalcular_versao(self, modelo: TabelaVerticesModel, dados_utm_brutos: pd.DataFrame) -> None:
+        """Reconverte esta versão pendente com o Meridiano/Hemisfério
+        escolhidos AGORA, a partir do easting/northing original preservado
+        — sem precisar reimportar o arquivo nem refazer o mapeamento de
+        coluna. Só toca E/Long e N/Lat; qualquer outra edição já feita na
+        grade desta versão continua."""
+        meridiano = float(self.combo_meridiano.currentText())
+        hemisferio = self.combo_hemisferio.currentText()
+        longitudes, latitudes = self._converter_utm(
+            dados_utm_brutos["e_long"], dados_utm_brutos["n_lat"], meridiano, hemisferio
+        )
+        modelo.definir_coluna_valores("e_long", longitudes)
+        modelo.definir_coluna_valores("n_lat", latitudes)
 
     def _remover_versao(self, bloco: QWidget) -> None:
         self.layout_versoes.removeWidget(bloco)

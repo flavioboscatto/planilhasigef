@@ -27,8 +27,10 @@ def _novo_dialogo(aplicar_versao, meridiano=-51.0, hemisferio="Sul"):
         opcoes_tipo_vertice=[t["codigo"] for t in dominios["tipos_vertice"]],
         opcoes_metodo=[m["codigo"] for m in dominios["metodos_posicionamento"]],
         opcoes_limite=[t["codigo"] for t in dominios["tipos_limite"]],
-        meridiano_central=meridiano,
-        hemisferio=hemisferio,
+        meridianos_disponiveis=dominios["meridianos_centrais_brasil"],
+        hemisferios_disponiveis=dominios["hemisferio"],
+        meridiano_inicial=meridiano,
+        hemisferio_inicial=hemisferio,
         tema=carregar_tema(),
         aplicar_versao=aplicar_versao,
     )
@@ -122,6 +124,39 @@ def test_remover_versao_descarta_sem_chamar_callback(qtbot, tmp_path, monkeypatc
 
     assert dialogo.layout_versoes.count() == 0
     assert resultados == []
+
+
+def test_recalcular_geodesica_utm_usa_hemisferio_atual_nao_o_inicial(qtbot, tmp_path, monkeypatch):
+    arquivo = tmp_path / "vertices.csv"
+    arquivo.write_text("codigo;x;y\nAJ4-M-001;500000;7000000\n", encoding="utf-8")
+    _apontar_arquivo(monkeypatch, arquivo)
+
+    dialogo = _novo_dialogo(lambda df: None, meridiano=-51.0, hemisferio="Norte")  # errado de propósito
+    qtbot.addWidget(dialogo)
+    dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
+    dialogo._escolher_arquivo()
+    dialogo._combos_mapeamento["codigo"].setCurrentText("Código do vértice")
+    dialogo._combos_mapeamento["x"].setCurrentText("E / Longitude")
+    dialogo._combos_mapeamento["y"].setCurrentText("N / Latitude")
+    dialogo.combo_sistema.setCurrentText("UTM")
+
+    dialogo._criar_versao()
+    bloco = dialogo.layout_versoes.itemAt(0).widget()
+    vista = bloco.findChild(TabelaVerticesView)
+    modelo = vista.model()
+    latitude_com_hemisferio_errado = modelo.dataframe().at[0, "n_lat"]
+
+    # percebe o erro, corrige o hemisfério e recalcula sem reimportar nada
+    dialogo.combo_hemisferio.setCurrentText("Sul")
+    from PySide6.QtWidgets import QPushButton
+    botao = next(b for b in bloco.findChildren(QPushButton) if "Recalcular" in b.text())
+    botao.click()
+
+    latitude_corrigida = modelo.dataframe().at[0, "n_lat"]
+    assert latitude_corrigida != latitude_com_hemisferio_errado
+    # hemisfério Sul, mesma linha de easting/northing: latitude tem que ser negativa
+    from core.parsing import parse_numero
+    assert parse_numero(latitude_corrigida) < 0
 
 
 def test_utm_sem_colunas_de_coordenada_nao_trava_so_avisa(qtbot, tmp_path, monkeypatch):

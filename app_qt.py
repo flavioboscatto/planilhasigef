@@ -170,6 +170,10 @@ class JanelaPrincipal(QMainWindow):
         aplicar_projeto(self, {"identificacao": {}, "num_parcelas": 1, "parcelas": [{"vertices": []}], "numeracao": {}})
         self.caminho_projeto = None
         self._atualizar_titulo()
+        # já pergunta onde salvar, igual ao "Criar projeto" da versão web —
+        # se cancelar, o projeto (em branco) continua, só sem lugar salvo
+        # ainda (dá pra usar Salvar/Salvar como depois).
+        self._salvar_projeto_como()
 
     def _abrir_projeto(self) -> None:
         caminho, _ = QFileDialog.getOpenFileName(
