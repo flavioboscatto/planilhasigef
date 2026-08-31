@@ -19,6 +19,13 @@ tools/out/
 build/
 dist/
 
+# Dado pessoal (CLAUDE.md regra 6): projeto salvo nunca vai pro repositório,
+# mesmo que caia sem querer dentro da pasta do projeto
+*.sigefproj
+
+# Mockups/artefatos de discussão, não fazem parte do app
+.artifacts/
+
 # SO
 .DS_Store
 Thumbs.db

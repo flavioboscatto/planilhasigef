@@ -1,7 +1,10 @@
 """Painel de numeração de vértices (Qt) — equivalente a ui/renumeracao.py.
-Fica fora de qualquer aba (dock lateral), porque a numeração corre entre
-parcelas: usa `obter_abas_perimetro()` pra pegar as abas atuais na hora do
-clique, já que parcelas podem ser adicionadas/removidas depois deste
+Faixa horizontal acima das abas (Proposta A escolhida em 2026-08-31 na
+comparação de layouts), não mais um dock lateral: fica sempre visível
+sem tomar largura da grade, e sem trocar de aba pra usar Renumerar/
+Atualizar. Fica fora de qualquer aba porque a numeração corre entre
+parcelas — usa `obter_abas_perimetro()` pra pegar as abas atuais na hora
+do clique, já que parcelas podem ser adicionadas/removidas depois deste
 painel existir.
 """
 from __future__ import annotations
@@ -10,7 +13,7 @@ from typing import Callable
 
 from PySide6.QtWidgets import (
     QComboBox,
-    QDockWidget,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -24,61 +27,85 @@ from core.numeracao import atualizar_tipos_parcelas, renumerar_parcelas
 _FORMATOS_NUMERO = ["1", "01", "001", "0001", "00001"]
 
 
-class PainelNumeracao(QDockWidget):
+def _campo_com_rotulo(rotulo: str, largura: int | None = None) -> tuple[QVBoxLayout, QLineEdit]:
+    layout = QVBoxLayout()
+    layout.setSpacing(2)
+    etiqueta = QLabel(rotulo)
+    etiqueta.setStyleSheet("font-size: 8.5pt; color: #55606b;")
+    campo = QLineEdit("001")
+    if largura:
+        campo.setFixedWidth(largura)
+    layout.addWidget(etiqueta)
+    layout.addWidget(campo)
+    return layout, campo
+
+
+class PainelNumeracao(QWidget):
     def __init__(self, dominios: dict, obter_abas_perimetro: Callable[[], list], parent=None) -> None:
-        super().__init__("Numeração de vértices", parent)
+        super().__init__(parent)
         self._obter_abas = obter_abas_perimetro
         self._campos_numero: dict[str, QLineEdit] = {}
 
-        conteudo = QWidget()
-        layout = QVBoxLayout(conteudo)
+        linha = QHBoxLayout(self)
+        linha.setContentsMargins(10, 6, 10, 6)
 
-        layout.addWidget(QLabel("Código do credenciado"))
-        self.campo_credenciado = QLineEdit()
-        layout.addWidget(self.campo_credenciado)
+        layout_cred, self.campo_credenciado = _campo_com_rotulo("Credenciado", largura=110)
+        self.campo_credenciado.setText("")
+        linha.addLayout(layout_cred)
 
-        layout.addWidget(QLabel("Formato do número"))
+        layout_formato = QVBoxLayout()
+        layout_formato.setSpacing(2)
+        layout_formato.addWidget(self._rotulo_pequeno("Formato"))
         self.combo_formato = QComboBox()
         self.combo_formato.addItems(_FORMATOS_NUMERO)
         self.combo_formato.setCurrentText("001")
-        layout.addWidget(self.combo_formato)
+        self.combo_formato.setFixedWidth(80)
+        layout_formato.addWidget(self.combo_formato)
+        linha.addLayout(layout_formato)
 
-        layout.addWidget(
-            QLabel(
-                "Próximo número livre de cada tipo — o mesmo contador da vida "
-                "profissional, não reinicia por parcela nem por serviço:"
-            )
-        )
+        linha.addSpacing(12)
+        linha.addWidget(self._separador_vertical())
+        linha.addSpacing(12)
+
+        linha.addWidget(QLabel("Próximo nº:"))
         for tipo in dominios["tipos_vertice"]:
-            layout.addWidget(QLabel(f"{tipo['codigo']} — {tipo['descricao']}"))
-            campo = QLineEdit("001")
+            layout_tipo, campo = _campo_com_rotulo(tipo["codigo"], largura=55)
+            campo.setToolTip(tipo["descricao"])
             self._campos_numero[tipo["codigo"]] = campo
-            layout.addWidget(campo)
+            linha.addLayout(layout_tipo)
+
+        linha.addSpacing(12)
+        linha.addWidget(self._separador_vertical())
+        linha.addSpacing(12)
 
         btn_renumerar = QPushButton("Renumerar vértices marcados")
-        btn_renumerar.clicked.connect(self._renumerar)
-        layout.addWidget(btn_renumerar)
-
-        layout.addWidget(
-            QLabel(
-                'Só linhas com "Renumerar?" marcado recebem código novo — '
-                "desmarque vértices que não são seus."
-            )
+        btn_renumerar.setToolTip(
+            'Só linhas com "Renumerar?" marcado recebem código novo, em todas '
+            "as parcelas abertas — desmarque vértices que não são seus."
         )
+        btn_renumerar.clicked.connect(self._renumerar)
+        linha.addWidget(btn_renumerar)
 
         btn_atualizar = QPushButton("🔄 Atualizar código (só o Tipo)")
-        btn_atualizar.clicked.connect(self._atualizar_tipos)
-        layout.addWidget(btn_atualizar)
-
-        layout.addWidget(
-            QLabel(
-                "Já renumerou e corrigiu o Tipo de algum vértice na grade? Isto "
-                "reescreve só o pedaço do Tipo no código, sem reatribuir número."
-            )
+        btn_atualizar.setToolTip(
+            "Já renumerou e corrigiu o Tipo de algum vértice na grade? Isto "
+            "reescreve só o pedaço do Tipo no código, sem reatribuir número."
         )
+        btn_atualizar.clicked.connect(self._atualizar_tipos)
+        linha.addWidget(btn_atualizar)
 
-        layout.addStretch()
-        self.setWidget(conteudo)
+        linha.addStretch()
+
+    def _rotulo_pequeno(self, texto: str) -> QLabel:
+        etiqueta = QLabel(texto)
+        etiqueta.setStyleSheet("font-size: 8.5pt; color: #55606b;")
+        return etiqueta
+
+    def _separador_vertical(self) -> QWidget:
+        linha = QWidget()
+        linha.setFixedWidth(1)
+        linha.setStyleSheet("background: #c7ced6;")
+        return linha
 
     def _largura(self) -> int:
         return len(self.combo_formato.currentText())

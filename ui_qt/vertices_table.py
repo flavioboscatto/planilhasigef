@@ -5,10 +5,15 @@ de widget, sem round-trip nenhum — nunca "engolem" a primeira tentativa
 nem perdem célula digitada, porque não existe "primeira tentativa que se
 perde num rerun": o clique já é o estado final.
 
-Também resolve de graça uma limitação que o Streamlit nunca teve como
-resolver: a MESMA grade fica colorida (Qt.BackgroundRole) E editável ao
-mesmo tempo — lá precisava de duas grades (editável sem cor + prévia
-colorida só-leitura).
+Também resolve de graça duas limitações que o Streamlit nunca teve como
+resolver com um componente só:
+- a MESMA grade fica colorida (Qt.BackgroundRole) E editável ao mesmo
+  tempo — lá precisava de duas grades (editável sem cor + prévia colorida
+  só-leitura);
+- a MESMA célula mostra o valor formatado como sai na planilha final (GMS
+  pra coordenada, casas decimais certas pra sigma/h — Qt.DisplayRole) mas
+  edita em decimal solto, sem vírgula obrigatória nem símbolo (Qt.EditRole)
+  — lá também precisava da prévia à parte só pra mostrar o formato final.
 """
 from __future__ import annotations
 
@@ -23,8 +28,13 @@ from PySide6.QtWidgets import (
     QTableView,
 )
 
+from core.ods_writer import _fmt_decimal, _fmt_geografica
+from core.parsing import ValorInvalidoError, parse_coordenada, parse_numero
 from core.tabela_vertices import COLUNAS_VERTICE, tabela_vazia
 from ui_qt.tema_qt import Papel
+
+_COLUNAS_COORDENADA = {"e_long": ("E", "W"), "n_lat": ("N", "S")}
+_COLUNAS_SIGMA = {"sigma_long", "sigma_lat", "sigma_h"}
 
 _ROTULOS = {
     "renumerar": "Renumerar?",
@@ -61,6 +71,7 @@ class TabelaVerticesModel(QAbstractTableModel):
         opcoes_tipo_vertice: list[str],
         opcoes_metodo: list[str],
         opcoes_limite: list[str],
+        casas: dict,
         df: pd.DataFrame | None = None,
         parent=None,
     ) -> None:
@@ -69,6 +80,9 @@ class TabelaVerticesModel(QAbstractTableModel):
         self.opcoes_tipo_vertice = opcoes_tipo_vertice
         self.opcoes_metodo = opcoes_metodo
         self.opcoes_limite = opcoes_limite
+        self._casas_segundos = casas["segundos_gms_casas_decimais"]
+        self._casas_sigma = casas["sigma_casas_decimais"]
+        self._casas_h = casas["h_casas_decimais"]
         self._df = (df if df is not None else tabela_vazia()).reset_index(drop=True)
 
     # --- leitura/escrita em bloco (usado por quem envolve a grade) ---
@@ -142,8 +156,30 @@ class TabelaVerticesModel(QAbstractTableModel):
                 return Qt.CheckState.Checked if bool(valor) else Qt.CheckState.Unchecked
             return None
 
-        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
-            return "" if pd.isna(valor) else str(valor)
+        texto = "" if pd.isna(valor) else str(valor)
+
+        if role == Qt.ItemDataRole.EditRole:
+            return texto
+
+        if role == Qt.ItemDataRole.DisplayRole:
+            if texto.strip():
+                if campo in _COLUNAS_COORDENADA:
+                    sufixo_pos, sufixo_neg = _COLUNAS_COORDENADA[campo]
+                    try:
+                        return _fmt_geografica(parse_coordenada(texto), sufixo_pos, sufixo_neg, self._casas_segundos)
+                    except ValorInvalidoError:
+                        return texto
+                if campo in _COLUNAS_SIGMA:
+                    try:
+                        return _fmt_decimal(parse_numero(texto), self._casas_sigma)
+                    except ValorInvalidoError:
+                        return texto
+                if campo == "h":
+                    try:
+                        return _fmt_decimal(parse_numero(texto), self._casas_h)
+                    except ValorInvalidoError:
+                        return texto
+            return texto
 
         if role == Qt.ItemDataRole.BackgroundRole:
             if campo in _COLUNAS_GERAL:

@@ -78,6 +78,7 @@ class ImportarVerticesDialog(QDialog):
         meridiano_inicial: float,
         hemisferio_inicial: str,
         tema: dict,
+        casas: dict,
         aplicar_versao,
         parent=None,
     ) -> None:
@@ -90,6 +91,7 @@ class ImportarVerticesDialog(QDialog):
         self._meridianos_disponiveis = meridianos_disponiveis
         self._hemisferios_disponiveis = hemisferios_disponiveis
         self._tema = tema
+        self._casas = casas
         self._aplicar_versao = aplicar_versao
         self._df_bruto: pd.DataFrame | None = None
         self._combos_mapeamento: dict[str, QComboBox] = {}
@@ -330,6 +332,7 @@ class ImportarVerticesDialog(QDialog):
             opcoes_tipo_vertice=self._opcoes_tipo_vertice,
             opcoes_metodo=self._opcoes_metodo,
             opcoes_limite=self._opcoes_limite,
+            casas=self._casas,
             df=dados,
         )
         vista = TabelaVerticesView(modelo)

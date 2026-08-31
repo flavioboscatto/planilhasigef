@@ -40,6 +40,20 @@ def _combo(itens: list[str]) -> QComboBox:
     return caixa
 
 
+def _botao_verde(texto: str, tema: dict) -> QPushButton:
+    """Botões de ação desta aba em verde claro (mesma cor de
+    "perimetro_entrada" no modelo oficial) — pedido do usuário pra
+    diferenciar visualmente as ações da aba Perímetro do resto do app."""
+    cor = tema["perimetro_entrada"].fundo
+    botao = QPushButton(texto)
+    botao.setStyleSheet(
+        f"QPushButton {{ background: {cor.name()}; border: 1px solid {cor.darker(140).name()}; }}"
+        f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
+        f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
+    )
+    return botao
+
+
 def _form(rotulo: str, campo: QWidget) -> QVBoxLayout:
     layout = QVBoxLayout()
     layout.addWidget(QLabel(rotulo))
@@ -82,7 +96,7 @@ class AbaPerimetro(QWidget):
         linha_cabecalho.addLayout(_form("Hemisfério", self.hemisferio))
         layout.addLayout(linha_cabecalho)
 
-        btn_importar = QPushButton("Importar vértices de um arquivo (TXT/CSV)...")
+        btn_importar = _botao_verde("Importar vértices de um arquivo (TXT/CSV)...", tema)
         btn_importar.clicked.connect(self._abrir_importador)
         layout.addWidget(btn_importar)
 
@@ -95,9 +109,9 @@ class AbaPerimetro(QWidget):
         )
 
         barra_acoes = QHBoxLayout()
-        btn_reorganizar = QPushButton("↻ Reorganizar (mais ao norte, sentido horário)")
-        btn_marcar = QPushButton("☑ Marcar todos p/ renumerar")
-        btn_desmarcar = QPushButton("☐ Desmarcar todos")
+        btn_reorganizar = _botao_verde("↻ Reorganizar (mais ao norte, sentido horário)", tema)
+        btn_marcar = _botao_verde("☑ Marcar todos p/ renumerar", tema)
+        btn_desmarcar = _botao_verde("☐ Desmarcar todos", tema)
         btn_reorganizar.clicked.connect(self._reorganizar)
         btn_marcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", True))
         btn_desmarcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", False))
@@ -110,7 +124,7 @@ class AbaPerimetro(QWidget):
         self.combo_coluna_lote = _combo(list(_CAMPOS_LOTE))
         self.combo_valor_lote = QComboBox()
         self.combo_coluna_lote.currentTextChanged.connect(self._atualizar_opcoes_lote)
-        btn_aplicar_lote = QPushButton("Aplicar a todas as linhas")
+        btn_aplicar_lote = _botao_verde("Aplicar a todas as linhas", tema)
         btn_aplicar_lote.clicked.connect(self._aplicar_lote)
         linha_lote.addWidget(QLabel("Preencher em lote:"))
         linha_lote.addWidget(self.combo_coluna_lote)
@@ -124,13 +138,14 @@ class AbaPerimetro(QWidget):
             opcoes_tipo_vertice=opcoes_tipo_vertice,
             opcoes_metodo=opcoes_metodo,
             opcoes_limite=opcoes_limite,
+            casas=dominios["limites_coordenadas"],
         )
         self.grade = TabelaVerticesView(self.modelo_tabela)
         layout.addWidget(self.grade)
 
         barra_linhas = QHBoxLayout()
-        btn_add_linha = QPushButton("+ Adicionar vértice")
-        btn_remove_linha = QPushButton("- Remover vértice(s) selecionado(s)")
+        btn_add_linha = _botao_verde("+ Adicionar vértice", tema)
+        btn_remove_linha = _botao_verde("- Remover vértice(s) selecionado(s)", tema)
         btn_add_linha.clicked.connect(lambda: self.modelo_tabela.inserir_linha())
         btn_remove_linha.clicked.connect(self._remover_linhas_selecionadas)
         barra_linhas.addWidget(btn_add_linha)
@@ -189,6 +204,7 @@ class AbaPerimetro(QWidget):
             meridiano_inicial=float(self.meridiano_central.currentText()),
             hemisferio_inicial=self.hemisferio.currentText(),
             tema=self._tema,
+            casas=self._dominios["limites_coordenadas"],
             aplicar_versao=self._aplicar_versao_importada,
             parent=self,
         )

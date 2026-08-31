@@ -32,6 +32,7 @@ def _nova_view(df: pd.DataFrame | None = None) -> TabelaVerticesView:
         opcoes_tipo_vertice=[t["codigo"] for t in dominios["tipos_vertice"]],
         opcoes_metodo=[m["codigo"] for m in dominios["metodos_posicionamento"]],
         opcoes_limite=[t["codigo"] for t in dominios["tipos_limite"]],
+        casas=dominios["limites_coordenadas"],
         df=df,
     )
     return TabelaVerticesView(modelo)
@@ -150,6 +151,37 @@ def test_inserir_e_remover_linha(qtbot):
     assert modelo.rowCount() == 3
 
 
+def test_exibicao_mostra_gms_e_casas_certas_mas_edicao_continua_decimal(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    df = modelo.dataframe()
+    col_elong = df.columns.get_loc("e_long")
+    col_nlat = df.columns.get_loc("n_lat")
+    col_h = df.columns.get_loc("h")
+    col_sigma = df.columns.get_loc("sigma_h")
+
+    modelo.setData(modelo.index(0, col_elong), "-48,548333", Qt.ItemDataRole.EditRole)
+    modelo.setData(modelo.index(0, col_nlat), "-27,508333", Qt.ItemDataRole.EditRole)
+    modelo.setData(modelo.index(0, col_h), "13,23", Qt.ItemDataRole.EditRole)
+    modelo.setData(modelo.index(0, col_sigma), "0,1", Qt.ItemDataRole.EditRole)
+
+    # exibição: formato final da planilha (GMS / casas decimais exigidas)
+    texto_elong = modelo.data(modelo.index(0, col_elong), Qt.ItemDataRole.DisplayRole)
+    texto_nlat = modelo.data(modelo.index(0, col_nlat), Qt.ItemDataRole.DisplayRole)
+    texto_h = modelo.data(modelo.index(0, col_h), Qt.ItemDataRole.DisplayRole)
+    texto_sigma = modelo.data(modelo.index(0, col_sigma), Qt.ItemDataRole.DisplayRole)
+    assert texto_elong.endswith("W")
+    assert texto_nlat.endswith("S")
+    assert "," in texto_elong  # tem segundos com vírgula decimal
+    assert texto_h == "13,230"  # 3 casas
+    assert texto_sigma == "0,10"  # 2 casas
+
+    # edição: continua decimal solto, do jeito que foi digitado
+    assert modelo.data(modelo.index(0, col_elong), Qt.ItemDataRole.EditRole) == "-48,548333"
+    assert modelo.data(modelo.index(0, col_h), Qt.ItemDataRole.EditRole) == "13,23"
+
+
 def test_substituir_dataframe_inteiro():
     tema = carregar_tema()
     dominios = _dominios()
@@ -158,6 +190,7 @@ def test_substituir_dataframe_inteiro():
         opcoes_tipo_vertice=[t["codigo"] for t in dominios["tipos_vertice"]],
         opcoes_metodo=[m["codigo"] for m in dominios["metodos_posicionamento"]],
         opcoes_limite=[t["codigo"] for t in dominios["tipos_limite"]],
+        casas=dominios["limites_coordenadas"],
     )
     nova = tabela_vazia(5)
     nova.at[0, "codigo"] = "X-1"

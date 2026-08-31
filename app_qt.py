@@ -17,7 +17,6 @@ import json
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -25,11 +24,14 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QTabWidget,
     QToolBar,
+    QVBoxLayout,
+    QWidget,
 )
 
 from core import ods_writer
 from core.projeto import ProjetoInvalidoError, desserializar, serializar
 from core.template_loader import load_template
+from ui_qt.estilo_qt import FOLHA_DE_ESTILO
 from ui_qt.identificacao_tab import AbaIdentificacao
 from ui_qt.perimetro_tab import AbaPerimetro
 from ui_qt.projeto_qt import aplicar_projeto, montar_projeto
@@ -57,17 +59,26 @@ class JanelaPrincipal(QMainWindow):
         self.municipios = _carregar_json("municipios.json")
         self.tema = carregar_tema()
 
+        # faixa horizontal (Numeração) acima das abas, não dock lateral —
+        # Proposta A da comparação de layouts: a grade de vértices fica com
+        # 100% da largura da janela, e Renumerar/Atualizar continuam a um
+        # clique, sem disputar espaço nem exigir trocar de aba.
         self.abas = QTabWidget()
-        self.setCentralWidget(self.abas)
+        self.painel_numeracao = PainelNumeracao(self.dominios, self._abas_perimetro)
+
+        central = QWidget()
+        layout_central = QVBoxLayout(central)
+        layout_central.setContentsMargins(0, 0, 0, 0)
+        layout_central.setSpacing(0)
+        layout_central.addWidget(self.painel_numeracao)
+        layout_central.addWidget(self.abas)
+        self.setCentralWidget(central)
 
         self._criar_menu()
         self._criar_barra_ferramentas()
 
         self._adicionar_aba_identificacao()
         self._adicionar_aba_parcela()
-
-        self.painel_numeracao = PainelNumeracao(self.dominios, self._abas_perimetro)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.painel_numeracao)
 
     def _abas_perimetro(self) -> list[AbaPerimetro]:
         return [self.abas.widget(i) for i in range(1, self.abas.count())]
@@ -220,6 +231,11 @@ class JanelaPrincipal(QMainWindow):
 
 def main() -> None:
     app = QApplication.instance() or QApplication(sys.argv)
+    # Fusion, não o estilo nativo do Windows: o nativo ignora várias regras
+    # de QSS (a borda de foco, principalmente) — era por isso que o campo
+    # de texto ficava sem contraste, só um traço fino ao focar.
+    app.setStyle("Fusion")
+    app.setStyleSheet(FOLHA_DE_ESTILO)
     janela = JanelaPrincipal()
     janela.show()
     sys.exit(app.exec())

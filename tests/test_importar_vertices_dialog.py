@@ -32,6 +32,7 @@ def _novo_dialogo(aplicar_versao, meridiano=-51.0, hemisferio="Sul"):
         meridiano_inicial=meridiano,
         hemisferio_inicial=hemisferio,
         tema=carregar_tema(),
+        casas=dominios["limites_coordenadas"],
         aplicar_versao=aplicar_versao,
     )
 
