@@ -2,10 +2,11 @@
 SIGEF — ver plano de migração (~/.claude/plans, ou peça pro Claude
 recuperar) para o roteiro completo por fases.
 
-Fase 1: só o esqueleto — janela principal, menu, abas reais (Identificação
-+ parcelas) que trocam sem perder estado (diferente do Streamlit, um
-QWidget de aba fica vivo em memória o tempo todo, não é recriado a cada
-clique). Conteúdo de cada aba ainda vem nas próximas fases.
+Janela principal, menu, abas reais (Identificação + parcelas) que trocam
+sem perder estado — diferente do Streamlit, um QWidget de aba fica vivo em
+memória o tempo todo, não é recriado a cada clique. Menu Arquivo
+(Novo/Abrir/Salvar/Gerar planilha) ainda não ligado a nada de verdade
+(Fase 7/8).
 
 Constrói ao lado de app.py (Streamlit) sem tocar nele — as duas versões
 convivem até a migração terminar.
@@ -18,16 +19,14 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QApplication,
-    QLabel,
     QMainWindow,
     QMessageBox,
     QTabWidget,
     QToolBar,
-    QVBoxLayout,
-    QWidget,
 )
 
 from ui_qt.identificacao_tab import AbaIdentificacao
+from ui_qt.perimetro_tab import AbaPerimetro
 from ui_qt.tema_qt import carregar_tema
 
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
@@ -103,12 +102,9 @@ class JanelaPrincipal(QMainWindow):
     def _adicionar_aba_parcela(self) -> None:
         indice = self._proxima_parcela
         self._proxima_parcela += 1
-        # placeholder — Fase 4 troca por ui_qt/perimetro_tab.py
-        conteudo = QWidget()
-        layout = QVBoxLayout(conteudo)
-        layout.addWidget(QLabel(f"Parcela {indice} (em construção — Fase 4)"))
-        self.abas.addTab(conteudo, f"Parcela {indice}")
-        self.abas.setCurrentWidget(conteudo)
+        aba = AbaPerimetro(indice, self.dominios, self.tema)
+        self.abas.addTab(aba, f"Parcela {indice}")
+        self.abas.setCurrentWidget(aba)
 
     def _remover_ultima_parcela(self) -> None:
         # índice 0 é sempre a aba Identificação — só remove se sobrar
