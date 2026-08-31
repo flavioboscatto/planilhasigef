@@ -144,6 +144,28 @@ class TabelaVerticesModel(QAbstractTableModel):
         self._df.loc[pos] = nova
         self.endInsertRows()
 
+    def mover_linha(self, pos: int, deslocamento: int) -> int | None:
+        """Troca a linha `pos` de lugar com a vizinha logo acima
+        (deslocamento=-1) ou abaixo (deslocamento=+1) — devolve a nova
+        posição, ou None se `pos` já está na ponta correspondente (sem
+        vizinha pra trocar). beginMoveRows/endMoveRows (não
+        beginResetModel) pra a seleção na QTableView acompanhar a linha
+        movida, em vez de se perder."""
+        destino = pos + deslocamento
+        if not (0 <= pos < len(self._df)) or not (0 <= destino < len(self._df)):
+            return None
+        self._guardar_para_desfazer()
+        # Qt conta a posição de destino ANTES da remoção da linha de
+        # origem — mover pra baixo precisa de +1 a mais que o índice final
+        # de fato, senão vira exceção ("destinationChild out of bounds").
+        destino_qt = destino if deslocamento < 0 else destino + 1
+        self.beginMoveRows(QModelIndex(), pos, pos, QModelIndex(), destino_qt)
+        ordem = list(range(len(self._df)))
+        ordem[pos], ordem[destino] = ordem[destino], ordem[pos]
+        self._df = self._df.iloc[ordem].reset_index(drop=True)
+        self.endMoveRows()
+        return destino
+
     def remover_linhas(self, posicoes: list[int]) -> None:
         self._guardar_para_desfazer()
         for pos in sorted(set(posicoes), reverse=True):

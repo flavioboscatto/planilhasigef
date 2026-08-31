@@ -203,6 +203,45 @@ def test_inserir_e_remover_linha(qtbot):
     assert modelo.rowCount() == 3
 
 
+def test_mover_linha_para_cima_troca_com_a_vizinha_de_cima(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    modelo.setData(modelo.index(0, 2), "A", 2)
+    modelo.setData(modelo.index(1, 2), "B", 2)
+    modelo.setData(modelo.index(2, 2), "C", 2)
+
+    nova_pos = modelo.mover_linha(1, -1)
+
+    assert nova_pos == 0
+    assert list(modelo.dataframe()["codigo"]) == ["B", "A", "C"]
+
+
+def test_mover_linha_para_baixo_troca_com_a_vizinha_de_baixo(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    modelo.setData(modelo.index(0, 2), "A", 2)
+    modelo.setData(modelo.index(1, 2), "B", 2)
+    modelo.setData(modelo.index(2, 2), "C", 2)
+
+    nova_pos = modelo.mover_linha(1, 1)
+
+    assert nova_pos == 2
+    assert list(modelo.dataframe()["codigo"]) == ["A", "C", "B"]
+
+
+def test_mover_linha_na_ponta_nao_faz_nada(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    modelo.setData(modelo.index(0, 2), "A", 2)
+
+    assert modelo.mover_linha(0, -1) is None
+    assert modelo.mover_linha(2, 1) is None
+    assert modelo.dataframe().at[0, "codigo"] == "A"
+
+
 def test_exibicao_mostra_gms_e_casas_certas_mas_edicao_continua_decimal(qtbot):
     view = _nova_view()
     qtbot.addWidget(view)

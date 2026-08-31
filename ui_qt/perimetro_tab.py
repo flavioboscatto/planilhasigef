@@ -12,6 +12,7 @@ sub-aba própria e persistente aqui dentro ("Importação 1", "Importação
 from __future__ import annotations
 
 import pandas as pd
+from PySide6.QtCore import QItemSelection, QItemSelectionModel
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -141,10 +142,16 @@ class AbaPerimetro(QWidget):
         barra_linhas = QHBoxLayout()
         btn_add_linha = botao_verde("+ Adicionar vértice", tema)
         btn_remove_linha = botao_verde("- Remover vértice(s) selecionado(s)", tema)
+        btn_subir_linha = botao_verde("↑ Subir linha selecionada", tema)
+        btn_descer_linha = botao_verde("↓ Descer linha selecionada", tema)
         btn_add_linha.clicked.connect(lambda: self.modelo_tabela.inserir_linha())
         btn_remove_linha.clicked.connect(self._remover_linhas_selecionadas)
+        btn_subir_linha.clicked.connect(lambda: self._mover_linha_selecionada(-1))
+        btn_descer_linha.clicked.connect(lambda: self._mover_linha_selecionada(1))
         barra_linhas.addWidget(btn_add_linha)
         barra_linhas.addWidget(btn_remove_linha)
+        barra_linhas.addWidget(btn_subir_linha)
+        barra_linhas.addWidget(btn_descer_linha)
         layout_aba_tabela.addLayout(barra_linhas)
 
         self.subabas.addTab(aba_tabela, "Tabela de Perímetro")
@@ -165,6 +172,22 @@ class AbaPerimetro(QWidget):
     def _remover_linhas_selecionadas(self) -> None:
         linhas = {indice.row() for indice in self.grade.selectionModel().selectedIndexes()}
         self.modelo_tabela.remover_linhas(sorted(linhas))
+
+    def _mover_linha_selecionada(self, deslocamento: int) -> None:
+        linhas = {indice.row() for indice in self.grade.selectionModel().selectedIndexes()}
+        if len(linhas) != 1:
+            QMessageBox.warning(self, "Mover vértice", "Selecione uma única linha para subir/descer.")
+            return
+        nova_pos = self.modelo_tabela.mover_linha(next(iter(linhas)), deslocamento)
+        if nova_pos is None:
+            return
+        # sem isto, a seleção fica na posição antiga (agora ocupada pela
+        # linha vizinha) e parece que o clique não fez nada
+        linha_esq = self.modelo_tabela.index(nova_pos, 0)
+        linha_dir = self.modelo_tabela.index(nova_pos, self.modelo_tabela.columnCount() - 1)
+        self.grade.selectionModel().select(
+            QItemSelection(linha_esq, linha_dir), QItemSelectionModel.SelectionFlag.ClearAndSelect
+        )
 
     def _reorganizar(self) -> None:
         df = self.modelo_tabela.dataframe()

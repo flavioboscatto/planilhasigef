@@ -97,6 +97,48 @@ def test_marcar_e_desmarcar_todos(qtbot):
     assert all(aba.modelo_tabela.dataframe()["renumerar"])
 
 
+def test_subir_linha_selecionada_troca_com_a_vizinha_de_cima(qtbot):
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, 2), "A", 2)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(1, 2), "B", 2)
+    aba.grade.selectRow(1)
+
+    aba._mover_linha_selecionada(-1)
+
+    assert list(aba.modelo_tabela.dataframe()["codigo"])[:2] == ["B", "A"]
+    assert aba.grade.selectionModel().selectedIndexes()[0].row() == 0
+
+
+def test_descer_linha_selecionada_troca_com_a_vizinha_de_baixo(qtbot):
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, 2), "A", 2)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(1, 2), "B", 2)
+    aba.grade.selectRow(0)
+
+    aba._mover_linha_selecionada(1)
+
+    assert list(aba.modelo_tabela.dataframe()["codigo"])[:2] == ["B", "A"]
+
+
+def test_mover_linha_sem_selecao_unica_avisa_e_nao_altera(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    avisos = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: avisos.append(a))
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, 2), "A", 2)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(1, 2), "B", 2)
+    # nada selecionado
+
+    aba._mover_linha_selecionada(-1)
+
+    assert avisos
+    assert list(aba.modelo_tabela.dataframe()["codigo"])[:2] == ["A", "B"]
+
+
 def test_preencher_em_lote_metodo_posicionamento(qtbot):
     aba = _nova_aba()
     qtbot.addWidget(aba)
