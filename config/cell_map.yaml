@@ -1,0 +1,57 @@
+# Mapa campo -> célula do sigef_planilha_modelo_1.4_rc5.ods.
+# Fonte: tools/out/dump_celulas.csv (gerado por tools/inspect_template.py).
+# Trocou o modelo de versão? Este arquivo é o único lugar a atualizar —
+# nenhum endereço de célula deve aparecer em código Python (CLAUDE.md, regra 3).
+
+identificacao:
+  aba: identificacao
+  campos:
+    natureza_servico: B2
+    tipo_pessoa: B5
+    nome: B6
+    cpf_cnpj: B7
+    denominacao_area: B10
+    situacao: B11
+    natureza_area: B12
+    codigo_imovel_sncr: B13
+    codigo_cartorio_cns: B14
+    matricula: B15
+    # "Município(s):" (A16) tem duas linhas de entrada no modelo (B16 e B17).
+    # Não foi possível confirmar no LibreOffice se B17 é de fato um segundo
+    # município ou outra coisa (é a célula-âncora de uma content-validation
+    # sem lista estática, val2) — municipio_2 é a melhor leitura disponível
+    # do dump, mas precisa ser conferida abrindo o modelo de verdade.
+    municipio_1: B16
+    municipio_2: B17
+
+perimetro:
+  # Cada parcela é uma aba própria: perimetro_1, perimetro_2, ...
+  aba_prefixo: "perimetro_"
+  campos:
+    denominacao: B3
+    parcela_numero: B4
+    lado: B5
+    tipo_coordenada: B9
+    meridiano_central: D9
+    hemisferio: F9
+  tabela_vertices:
+    linha_inicial: 12
+    # Só 9 linhas vêm pré-formatadas no modelo (12 a 20); da linha 21 em
+    # diante é preenchimento de dimensão da planilha (ver docstring de
+    # tools/inspect_template.py). Parcela com mais vértices que isso: o
+    # gravador clona a linha 20 e insere quantas precisar (ver
+    # core/ods_writer._garantir_linhas_vertice) — não verificado com F3.
+    linha_final_maxima: 20
+    colunas:
+      codigo: A
+      e_long: B
+      sigma_long: C
+      n_lat: D
+      sigma_lat: E
+      h: F
+      sigma_h: G
+      metodo_posicionamento: H
+      tipo_limite: I
+      cns: J
+      matricula: K
+      descritivo: L

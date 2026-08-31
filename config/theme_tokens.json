@@ -1,0 +1,97 @@
+{
+  "servico_titulo": {
+    "fundo": "#422525",
+    "texto": "#ffffff",
+    "negrito": true
+  },
+  "servico_label": {
+    "fundo": "#422525",
+    "texto": "#ffffff",
+    "negrito": false
+  },
+  "servico_entrada": {
+    "fundo": "#ead6d6",
+    "texto": null,
+    "negrito": false
+  },
+  "detentor_titulo": {
+    "fundo": "#353d71",
+    "texto": "#ffffff",
+    "negrito": true
+  },
+  "detentor_label": {
+    "fundo": "#353d71",
+    "texto": "#ffffff",
+    "negrito": false
+  },
+  "detentor_entrada": {
+    "fundo": "#9aa3e2",
+    "texto": null,
+    "negrito": false
+  },
+  "area_titulo": {
+    "fundo": "#345b3a",
+    "texto": "#ffffff",
+    "negrito": true
+  },
+  "area_label": {
+    "fundo": "#345b3a",
+    "texto": "#ffffff",
+    "negrito": false
+  },
+  "area_entrada": {
+    "fundo": "#b1c5b5",
+    "texto": null,
+    "negrito": false
+  },
+  "perimetro_titulo": {
+    "fundo": "#345b3a",
+    "texto": "#ffffff",
+    "negrito": true
+  },
+  "perimetro_label": {
+    "fundo": "#345b3a",
+    "texto": "#ffffff",
+    "negrito": true
+  },
+  "perimetro_entrada": {
+    "fundo": "#b1c5b5",
+    "texto": null,
+    "negrito": true
+  },
+  "perimetro_coord_label": {
+    "fundo": "#422525",
+    "texto": "#ffffff",
+    "negrito": true
+  },
+  "perimetro_coord_sublabel": {
+    "fundo": "#422525",
+    "texto": "#999999",
+    "negrito": true
+  },
+  "perimetro_coord_entrada": {
+    "fundo": "#ead6d6",
+    "texto": null,
+    "negrito": false
+  },
+  "tabela_header_geral": {
+    "fundo": "#422525",
+    "texto": "#ffffff",
+    "negrito": false
+  },
+  "tabela_entrada_geral": {
+    "fundo": "#ead6d6",
+    "texto": null,
+    "negrito": false
+  },
+  "tabela_header_confrontante": {
+    "fundo": "#4e5791",
+    "texto": "#ffffff",
+    "negrito": false
+  },
+  "tabela_entrada_confrontante": {
+    "fundo": "#9aa3e2",
+    "texto": null,
+    "negrito": false
+  }
+}
