@@ -203,6 +203,50 @@ def test_inserir_e_remover_linha(qtbot):
     assert modelo.rowCount() == 3
 
 
+def test_coluna_de_combo_mostra_setinha_indicativa_mas_edicao_fica_limpa(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    col_tipo = modelo.dataframe().columns.get_loc("tipo_vertice")
+
+    # célula vazia já mostra a seta (nada indicava que abria um combo antes
+    # de digitar/clicar)
+    assert modelo.data(modelo.index(0, col_tipo), Qt.ItemDataRole.DisplayRole) == "▾"
+
+    modelo.setData(modelo.index(0, col_tipo), "M", Qt.ItemDataRole.EditRole)
+
+    assert modelo.data(modelo.index(0, col_tipo), Qt.ItemDataRole.DisplayRole) == "M ▾"
+    assert modelo.data(modelo.index(0, col_tipo), Qt.ItemDataRole.EditRole) == "M"
+
+
+def test_clicar_na_seta_da_coluna_combo_abre_o_editor(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    col_tipo = modelo.dataframe().columns.get_loc("tipo_vertice")
+    indice = modelo.index(0, col_tipo)
+
+    aberto = []
+    view.edit = lambda i: aberto.append(i) or True  # substitui só pra este teste
+
+    retangulo = view.visualRect(indice)
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent
+
+    local = QPointF(retangulo.right() - 2, retangulo.center().y())
+    evento = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        local,
+        local,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    view.mousePressEvent(evento)
+
+    assert aberto == [indice]
+
+
 def test_mover_linha_para_cima_troca_com_a_vizinha_de_cima(qtbot):
     view = _nova_view()
     qtbot.addWidget(view)

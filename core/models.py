@@ -50,5 +50,11 @@ class Perimetro(BaseModel):
     lado: str = "Externo"
     tipo_coordenada: str = "Geográfica"
     meridiano_central: float | None = None
-    hemisferio: str = "Norte"
+    # Sul, não o "Norte" que seria o primeiro item de dominios.json: quase
+    # todo o território brasileiro fica no hemisfério sul — combina com o
+    # default já usado ao criar uma parcela nova (ui_qt/perimetro_tab.py).
+    # Ficar destoante daqui é o que fazia "Novo projeto" (que passa por
+    # este default do Pydantic, não pelo construtor da aba) abrir às vezes
+    # em Norte.
+    hemisferio: str = "Sul"
     vertices: list[Vertice] = []

@@ -139,6 +139,22 @@ def test_abrir_projeto_carrega_arquivo_escolhido(qtbot, tmp_path, monkeypatch):
     assert janela.caminho_projeto == str(caminho)
 
 
+def test_novo_projeto_mantem_hemisferio_sul_como_padrao(qtbot, monkeypatch):
+    # bug relatado: "Novo projeto" passa pelo default do Pydantic
+    # (core/models.py::Perimetro), não pelo construtor da aba — se os dois
+    # defaults divergirem, a parcela nova às vezes abre em Norte.
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes
+    )
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: ("", "")))
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+
+    janela._novo_projeto()
+
+    assert janela._abas_perimetro()[0].hemisferio.currentText() == "Sul"
+
+
 def test_novo_projeto_reseta_apos_confirmacao(qtbot, monkeypatch):
     monkeypatch.setattr(
         QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes

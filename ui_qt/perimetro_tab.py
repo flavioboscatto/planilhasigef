@@ -30,7 +30,7 @@ from core.tabela_vertices import linha_para_vertice, preenchido, vertice_para_li
 from core.validators.geometria import reordena_norte_horario
 from ui_qt.importacao_tab import AbaImportacao
 from ui_qt.importar_vertices_dialog import ImportarVerticesDialog
-from ui_qt.tema_qt import Papel, botao_verde, titulo_secao
+from ui_qt.tema_qt import MAX_ITENS_VISIVEIS_COMBO, Papel, botao_verde, titulo_secao
 from ui_qt.vertices_table import TabelaVerticesModel, TabelaVerticesView
 
 _CAMPOS_LOTE = {
@@ -43,7 +43,13 @@ _CAMPOS_LOTE = {
 def _combo(itens: list[str]) -> QComboBox:
     caixa = QComboBox()
     caixa.addItems(itens)
-    caixa.setMaxVisibleItems(20)
+    caixa.setMaxVisibleItems(MAX_ITENS_VISIVEIS_COMBO)
+    # sem isto, um domínio de opções curtas (Sul/Norte, Externo/Interno...)
+    # deixava a caixa estreita — texto e seta ficavam espremidos contra a
+    # borda ("embolado"). Largura mínima por número de caracteres, não
+    # pixels fixos, pra acompanhar fonte/DPI.
+    caixa.setMinimumContentsLength(12)
+    caixa.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
     return caixa
 
 
@@ -112,6 +118,7 @@ class AbaPerimetro(QWidget):
         linha_lote = QHBoxLayout()
         self.combo_coluna_lote = _combo(list(_CAMPOS_LOTE))
         self.combo_valor_lote = QComboBox()
+        self.combo_valor_lote.setMaxVisibleItems(MAX_ITENS_VISIVEIS_COMBO)
         self.combo_coluna_lote.currentTextChanged.connect(self._atualizar_opcoes_lote)
         btn_aplicar_lote = botao_verde("Aplicar a todas as linhas", tema)
         btn_aplicar_lote.clicked.connect(self._aplicar_lote)

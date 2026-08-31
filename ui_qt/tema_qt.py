@@ -20,6 +20,15 @@ from PySide6.QtWidgets import QLabel, QPushButton
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "theme_tokens.json"
 
+# maior lista de domínio real hoje é Método de Posicionamento (26 itens,
+# config/dominios.json) — um cap menor que isso obriga rolar pra ver o
+# resto mesmo quando a tela tem espaço de sobra. Compartilhado entre
+# ui_qt/perimetro_tab.py, ui_qt/identificacao_tab.py e
+# ui_qt/vertices_table.py (delegate de combo da grade); município (5571
+# itens) usa combo pesquisável à parte (ui_qt/identificacao_tab.py::
+# _combo_pesquisavel), não este cap.
+MAX_ITENS_VISIVEIS_COMBO = 30
+
 
 @dataclass(frozen=True)
 class Papel:

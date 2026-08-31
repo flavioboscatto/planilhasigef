@@ -21,18 +21,17 @@ from PySide6.QtWidgets import (
 
 from core.models import Identificacao
 from core.parsing import formatar_cpf_cnpj
-from ui_qt.tema_qt import Papel, titulo_secao
-
-# listas de dominio (natureza_area, metodos_posicionamento etc.) tem ate
-# ~27 itens — sem isto, o popup do combo corta em poucas linhas e obriga
-# rolar mesmo pra listas que cabem inteiras na tela.
-_MAX_ITENS_VISIVEIS_COMBO = 20
+from ui_qt.tema_qt import MAX_ITENS_VISIVEIS_COMBO, Papel, titulo_secao
 
 
 def _combo(itens: list[str]) -> QComboBox:
     caixa = QComboBox()
     caixa.addItems(itens)
-    caixa.setMaxVisibleItems(_MAX_ITENS_VISIVEIS_COMBO)
+    caixa.setMaxVisibleItems(MAX_ITENS_VISIVEIS_COMBO)
+    # mesmo motivo de ui_qt/perimetro_tab.py::_combo — domínio de opções
+    # curtas deixava a caixa estreita e "embolada" (texto/seta espremidos).
+    caixa.setMinimumContentsLength(12)
+    caixa.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
     return caixa
 
 

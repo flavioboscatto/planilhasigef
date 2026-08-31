@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 from core.ods_writer import _fmt_decimal, _fmt_geografica
 from core.parsing import ValorInvalidoError, parse_coordenada, parse_numero
 from core.tabela_vertices import COLUNAS_VERTICE, tabela_vazia
-from ui_qt.tema_qt import Papel
+from ui_qt.tema_qt import MAX_ITENS_VISIVEIS_COMBO, Papel
 
 _COLUNAS_COORDENADA = {"e_long": ("E", "W"), "n_lat": ("N", "S")}
 _COLUNAS_SIGMA = {"sigma_long", "sigma_lat", "sigma_h"}
@@ -60,6 +60,13 @@ _COLUNAS_GERAL = {
     "metodo_posicionamento",
 }
 _COLUNAS_CONFRONTANTE = {"tipo_limite", "cns", "matricula", "descritivo"}
+
+# colunas com o _ComboDelegate (editor de combo) — recebem uma setinha "▾"
+# no DisplayRole (célula não editada não tinha nenhuma pista visual de que
+# abre um combo, só se descobria clicando) e abrem o editor com um clique
+# direto nessa área, não só duplo clique/tecla (ver TabelaVerticesView).
+_COLUNAS_COMBO = {"tipo_vertice", "metodo_posicionamento", "tipo_limite"}
+_LARGURA_SETA = 20
 
 _MARCADO = {Qt.CheckState.Checked, Qt.CheckState.Checked.value, 2}
 
@@ -226,6 +233,8 @@ class TabelaVerticesModel(QAbstractTableModel):
             return texto
 
         if role == Qt.ItemDataRole.DisplayRole:
+            if campo in _COLUNAS_COMBO:
+                return f"{texto} ▾" if texto.strip() else "▾"
             if texto.strip():
                 if campo in _COLUNAS_COORDENADA:
                     sufixo_pos, sufixo_neg = _COLUNAS_COORDENADA[campo]
@@ -299,7 +308,7 @@ class _ComboDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         combo = QComboBox(parent)
         combo.addItems(self._opcoes)
-        combo.setMaxVisibleItems(20)
+        combo.setMaxVisibleItems(MAX_ITENS_VISIVEIS_COMBO)
         # abre o popup já na hora de entrar na célula — sem isto, dava
         # duplo clique (que abre o editor) e ainda precisava clicar de
         # novo só pra ver as opções.
@@ -339,11 +348,34 @@ class TabelaVerticesView(QTableView):
         self.horizontalHeader().setStretchLastSection(False)
         self.setColumnWidth(COLUNAS_VERTICE.index("descritivo"), 270)
 
+        self._colunas_combo = {COLUNAS_VERTICE.index(c) for c in _COLUNAS_COMBO}
+        # sem largura própria, "Tipo" (coluna estreita, cabeçalho curto)
+        # ficava com o combo/seta espremidos contra a borda — "Met. Posic."
+        # e "Tipo Limite" só pareciam bons por acaso, por já serem colunas
+        # mais largas.
+        for campo in _COLUNAS_COMBO:
+            self.setColumnWidth(COLUNAS_VERTICE.index(campo), 110)
+
         self.setItemDelegateForColumn(COLUNAS_VERTICE.index("tipo_vertice"), _ComboDelegate(modelo.opcoes_tipo_vertice, self))
         self.setItemDelegateForColumn(
             COLUNAS_VERTICE.index("metodo_posicionamento"), _ComboDelegate(modelo.opcoes_metodo, self)
         )
         self.setItemDelegateForColumn(COLUNAS_VERTICE.index("tipo_limite"), _ComboDelegate(modelo.opcoes_limite, self))
+
+    def mousePressEvent(self, event) -> None:
+        # clicar na setinha (ver TabelaVerticesModel._COLUNAS_COMBO) abre o
+        # combo de primeira, sem precisar de duplo clique — clicar no resto
+        # da célula continua só selecionando, pra não atrapalhar
+        # arrastar/selecionar bloco pra copiar/colar.
+        if event.button() == Qt.MouseButton.LeftButton:
+            indice = self.indexAt(event.position().toPoint())
+            if indice.isValid() and indice.column() in self._colunas_combo:
+                retangulo = self.visualRect(indice)
+                if event.position().toPoint().x() >= retangulo.right() - _LARGURA_SETA:
+                    self.setCurrentIndex(indice)
+                    self.edit(indice)
+                    return
+        super().mousePressEvent(event)
 
     def keyPressEvent(self, event) -> None:
         if event.matches(QKeySequence.StandardKey.Undo):
