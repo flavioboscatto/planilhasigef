@@ -12,7 +12,9 @@ convivem até a migração terminar.
 """
 from __future__ import annotations
 
+import json
 import sys
+from pathlib import Path
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -25,6 +27,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui_qt.identificacao_tab import AbaIdentificacao
+from ui_qt.tema_qt import carregar_tema
+
+CONFIG_DIR = Path(__file__).resolve().parent / "config"
+
+
+def _carregar_json(nome_arquivo: str):
+    with (CONFIG_DIR / nome_arquivo).open("r", encoding="utf-8") as f:
+        return json.load(f)
+
 
 class JanelaPrincipal(QMainWindow):
     def __init__(self) -> None:
@@ -33,6 +45,9 @@ class JanelaPrincipal(QMainWindow):
         self.resize(1100, 800)
 
         self._proxima_parcela = 1
+        self.dominios = _carregar_json("dominios.json")
+        self.municipios = _carregar_json("municipios.json")
+        self.tema = carregar_tema()
 
         self.abas = QTabWidget()
         self.setCentralWidget(self.abas)
@@ -82,11 +97,8 @@ class JanelaPrincipal(QMainWindow):
         acao_remover.triggered.connect(self._remover_ultima_parcela)
 
     def _adicionar_aba_identificacao(self) -> None:
-        # placeholder — Fase 2 troca por ui_qt/identificacao_tab.py
-        conteudo = QWidget()
-        layout = QVBoxLayout(conteudo)
-        layout.addWidget(QLabel("Identificação (em construção — Fase 2)"))
-        self.abas.addTab(conteudo, "Identificação")
+        self.aba_identificacao = AbaIdentificacao(self.dominios, self.municipios, self.tema)
+        self.abas.addTab(self.aba_identificacao, "Identificação")
 
     def _adicionar_aba_parcela(self) -> None:
         indice = self._proxima_parcela
