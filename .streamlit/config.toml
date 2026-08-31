@@ -1,9 +1,0 @@
-[theme]
-# Cores extraídas do modelo oficial por tools/extract_theme.py — ver
-# config/theme_tokens.json. primaryColor e secondaryBackgroundColor vêm da
-# família "Área/Perímetro" (verde), a mais recorrente na planilha.
-primaryColor = "#345b3a"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#b1c5b5"
-textColor = "#1a1a1a"
-font = "sans serif"

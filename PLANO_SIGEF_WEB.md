@@ -1,5 +1,12 @@
 # Gerador de Planilha SIGEF — Plano de Implementação
 
+> **Histórico — superado.** Este plano descreve a v1 em Streamlit
+> (`app.py`/`ui/`), removida do repositório após a migração completa para
+> desktop nativo (PySide6/Qt, `app_qt.py`/`ui_qt/`). A camada `core/`
+> (regras de negócio, geodésia, gravação do `.ods`) descrita aqui não
+> mudou — as decisões de arquitetura de dados abaixo continuam válidas.
+> Para a arquitetura e os comandos atuais, ver `CLAUDE.md`.
+
 App web (Streamlit) que preenche a planilha eletrônica oficial do INCRA
 (`sigef_planilha_modelo_1.4_rc5.ods`), sempre a partir do modelo versionado no
 GitHub, com interface espelhando a planilha.
