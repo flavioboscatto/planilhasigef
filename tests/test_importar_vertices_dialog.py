@@ -84,6 +84,32 @@ def test_criar_versao_geodesica_chama_callback_com_dados_convertidos(qtbot, tmp_
     assert dados_utm_brutos is None  # não é UTM: não guarda easting/northing bruto
 
 
+def test_criar_versao_grau_minuto_decimal_chama_callback_com_dados_convertidos(qtbot, tmp_path, monkeypatch):
+    arquivo = tmp_path / "vertices.csv"
+    arquivo.write_text("codigo;lat;long\nAJ4-M-001;27 30,500 S;48 30,500 W\n", encoding="utf-8")
+    _apontar_arquivo(monkeypatch, arquivo)
+
+    chamadas = []
+    dialogo = _novo_dialogo(lambda dados, utm, mer, hem: chamadas.append((dados, utm, mer, hem)))
+    qtbot.addWidget(dialogo)
+    dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
+    dialogo._escolher_arquivo()
+    dialogo._combos_mapeamento["codigo"].setCurrentText("Código do vértice")
+    dialogo._combos_mapeamento["lat"].setCurrentText("N / Latitude")
+    dialogo._combos_mapeamento["long"].setCurrentText("E / Longitude")
+    dialogo.combo_sistema.setCurrentText("Geodésica")
+    dialogo.combo_formato_geo.setCurrentText("Grau + minuto decimal, sem segundos (ex.: 27 30,500 S)")
+
+    dialogo._criar_versao()
+
+    assert len(chamadas) == 1
+    dados, dados_utm_brutos, _meridiano, _hemisferio = chamadas[0]
+    assert dados.iloc[0]["codigo"] == "AJ4-M-001"
+    assert dados_utm_brutos is None
+    assert dados.iloc[0]["n_lat"].startswith("-27,5")
+    assert dados.iloc[0]["e_long"].startswith("-48,5")
+
+
 def test_criar_versao_utm_repassa_easting_northing_bruto_e_meridiano_hemisferio_atuais(qtbot, tmp_path, monkeypatch):
     arquivo = tmp_path / "vertices.csv"
     arquivo.write_text("codigo;x;y\nAJ4-M-001;500000;7000000\n", encoding="utf-8")

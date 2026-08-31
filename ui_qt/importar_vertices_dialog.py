@@ -38,6 +38,7 @@ from core.parsing import (
     normaliza_decimal,
     parse_coordenada,
     parse_geodesica_compacta,
+    parse_geodesica_grau_minuto,
     parse_numero,
 )
 from importers.delimitado import SEPARADORES, ler_arquivo
@@ -47,6 +48,7 @@ _CAMPOS_NUMERICOS = {"sigma_long", "sigma_lat", "h", "sigma_h"}
 _PARSERS_GEODESICA = {
     "Decimal (grau decimal, ex.: -27,508333)": parse_numero,
     "GMS — símbolos ou espaços (ex.: 27 30 30 S)": parse_coordenada,
+    "Grau + minuto decimal, sem segundos (ex.: 27 30,500 S)": parse_geodesica_grau_minuto,
     "Compactado GG,MMSS (ex.: -27,3030)": parse_geodesica_compacta,
 }
 

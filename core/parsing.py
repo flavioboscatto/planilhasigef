@@ -12,6 +12,9 @@ import re
 _GMS_RE = re.compile(
     r"^\s*(-?\d+)[°\s]+(\d+)['\s]+(\d+(?:[.,]\d+)?)\"?\s*([NSEWnsew])?\s*$"
 )
+_GM_RE = re.compile(
+    r"^\s*(-?\d+)[°\s]+(\d+(?:[.,]\d+)?)'?\s*([NSEWnsew])?\s*$"
+)
 
 
 class ValorInvalidoError(ValueError):
@@ -77,6 +80,28 @@ def parse_geodesica_compacta(texto: str) -> float:
     else:
         segundos = float(f"{resto[:2]}.{resto[2:]}")
     valor = float(graus_str) + minutos / 60.0 + segundos / 3600.0
+    return -valor if negativo else valor
+
+
+def parse_geodesica_grau_minuto(texto: str) -> float:
+    """Grau + minuto decimal, sem segundos (ex.: '27 30,500 S' ou
+    "27°30,500'"). Formato comum de receptor GPS/GNSS simples que não
+    detalha segundos — diferente do GMS completo (_GMS_RE) e do
+    compactado (parse_geodesica_compacta). Minuto aceita vírgula ou ponto
+    decimal. Sufixo S ou W nega o resultado; N ou E mantém positivo; sem
+    sufixo, respeita o sinal já digitado no grau.
+    """
+    texto = str(texto).strip()
+    if not texto:
+        return 0.0
+    m = _GM_RE.match(texto)
+    if not m:
+        raise ValorInvalidoError(
+            f"'{texto}' não está no formato grau + minuto decimal (ex.: 27 30,500 S)"
+        )
+    graus, minutos, sufixo = m.groups()
+    valor = abs(int(graus)) + parse_numero(minutos) / 60
+    negativo = int(graus) < 0 or (sufixo or "").upper() in ("S", "W")
     return -valor if negativo else valor
 
 

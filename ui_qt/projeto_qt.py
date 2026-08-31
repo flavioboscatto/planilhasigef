@@ -16,6 +16,25 @@ from core.models import Identificacao, Perimetro
 from core.tabela_vertices import COLUNAS_VERTICE
 
 
+def _serializar_importacoes(aba) -> list[dict]:
+    """Cada sub-aba "Importação N" (ui_qt/importacao_tab.py::AbaImportacao)
+    também entra no .sigefproj — sem isto, fechar e reabrir o projeto
+    perdia a conferência do que foi importado e a possibilidade de
+    recalcular geodésica de novo depois."""
+    importacoes = []
+    for i in range(1, aba.subabas.count()):
+        sub = aba.subabas.widget(i)
+        dados_utm_brutos = sub._dados_utm_brutos
+        importacoes.append({
+            "colunas": sub._colunas,
+            "linhas": sub._dataframe_atual().to_dict(orient="records"),
+            "dados_utm_brutos": dados_utm_brutos.to_dict(orient="records") if dados_utm_brutos is not None else None,
+            "meridiano": float(sub.combo_meridiano.currentText()) if hasattr(sub, "combo_meridiano") else None,
+            "hemisferio": sub.combo_hemisferio.currentText() if hasattr(sub, "combo_hemisferio") else None,
+        })
+    return importacoes
+
+
 def montar_projeto(janela) -> dict:
     identificacao = janela.aba_identificacao.modelo().model_dump()
 
@@ -24,6 +43,7 @@ def montar_projeto(janela) -> dict:
     for aba in abas:
         campos = aba.modelo().model_dump(exclude={"vertices"})
         campos["vertices"] = aba.modelo_tabela.dataframe().to_dict(orient="records")
+        campos["importacoes"] = _serializar_importacoes(aba)
         parcelas.append(campos)
 
     painel = janela.painel_numeracao
@@ -64,11 +84,23 @@ def aplicar_projeto(janela, dados: dict) -> None:
         aba = janela._abas_perimetro()[-1]
         parcela_dados = parcelas_dados[i] if i < len(parcelas_dados) else {}
 
-        valores = {**base_perimetro, **{k: v for k, v in parcela_dados.items() if k != "vertices" and v is not None}}
+        valores = {
+            **base_perimetro,
+            **{k: v for k, v in parcela_dados.items() if k not in ("vertices", "importacoes") and v is not None},
+        }
         aba.carregar_cabecalho(Perimetro(vertices=[], **valores))
 
         tabela = pd.DataFrame(parcela_dados.get("vertices", []), columns=COLUNAS_VERTICE)
         aba.modelo_tabela.substituir(tabela)
+
+        for importacao in parcela_dados.get("importacoes", []):
+            dados = pd.DataFrame(importacao.get("linhas", []), columns=importacao.get("colunas", []))
+            utm_brutos = importacao.get("dados_utm_brutos")
+            dados_utm_brutos = pd.DataFrame(utm_brutos, columns=["e_long", "n_lat"]) if utm_brutos else None
+            aba._criar_aba_importacao(
+                dados, dados_utm_brutos,
+                importacao.get("meridiano") or 0.0, importacao.get("hemisferio") or "",
+            )
 
     numeracao = dados.get("numeracao", {})
     painel = janela.painel_numeracao

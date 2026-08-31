@@ -41,6 +41,44 @@ def test_round_trip_identificacao_e_parcelas(qtbot):
     assert novas_abas[1].meridiano_central.currentText() == "-45"
 
 
+def test_round_trip_preserva_abas_de_importacao(qtbot):
+    # reclamação do usuário: fechar e reabrir o projeto perdia as abas
+    # "Importação N" (a Tabela de Perímetro já mesclada continuava, só a
+    # sub-aba de conferência/recálculo sumia).
+    import pandas as pd
+
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    aba = janela._abas_perimetro()[0]
+
+    dados_geo = pd.DataFrame({"codigo": ["AJ4-M-001"], "e_long": ["-48,50"], "n_lat": ["-27,50"]})
+    aba._criar_aba_importacao(dados_geo, None, 0.0, "")
+
+    dados_utm = pd.DataFrame({"codigo": ["AJ4-M-002"], "e_long": ["-48,60"], "n_lat": ["-27,60"]})
+    dados_utm_brutos = pd.DataFrame({"e_long": ["500000"], "n_lat": ["7000000"]})
+    aba._criar_aba_importacao(dados_utm, dados_utm_brutos, -51.0, "Sul")
+
+    dados = desserializar(serializar(montar_projeto(janela)))
+
+    nova = JanelaPrincipal()
+    qtbot.addWidget(nova)
+    aplicar_projeto(nova, dados)
+
+    nova_aba = nova._abas_perimetro()[0]
+    assert nova_aba.subabas.count() == 3  # Tabela de Perímetro + 2 importações
+
+    sub_geo = nova_aba.subabas.widget(1)
+    assert sub_geo._dataframe_atual().at[0, "codigo"] == "AJ4-M-001"
+    assert sub_geo._dados_utm_brutos is None
+    assert not hasattr(sub_geo, "combo_meridiano")
+
+    sub_utm = nova_aba.subabas.widget(2)
+    assert sub_utm._dataframe_atual().at[0, "codigo"] == "AJ4-M-002"
+    assert sub_utm._dados_utm_brutos.at[0, "e_long"] == "500000"
+    assert sub_utm.combo_meridiano.currentText() == "-51"
+    assert sub_utm.combo_hemisferio.currentText() == "Sul"
+
+
 def test_round_trip_preserva_numeracao(qtbot):
     janela = JanelaPrincipal()
     qtbot.addWidget(janela)
