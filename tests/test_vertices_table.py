@@ -251,3 +251,66 @@ def test_substituir_dataframe_inteiro():
 
     assert modelo.rowCount() == 5
     assert modelo.dataframe().at[0, "codigo"] == "X-1"
+
+
+def test_substituir_reordena_colunas_por_nome_mesmo_que_venham_fora_de_ordem(qtbot):
+    # é exatamente isto que corrige o bug do Reorganizar: um DataFrame
+    # construído a partir de uma lista de dicts pode vir com as colunas em
+    # qualquer ordem — a grade sempre lê/escreve por posição, então
+    # precisa normalizar antes de aceitar.
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+
+    fora_de_ordem = pd.DataFrame([
+        {"descritivo": "obs", "codigo": "X-1", "renumerar": True, "tipo_vertice": "M",
+         "e_long": "-48,00", "sigma_long": "0,01", "n_lat": "-9,00", "sigma_lat": "0,01",
+         "h": "1,0", "sigma_h": "0,01", "metodo_posicionamento": "PG1", "tipo_limite": "LA1",
+         "cns": "", "matricula": ""},
+    ])
+
+    modelo.substituir(fora_de_ordem)
+
+    df = modelo.dataframe()
+    assert df.at[0, "codigo"] == "X-1"
+    assert df.at[0, "e_long"] == "-48,00"
+    assert df.at[0, "descritivo"] == "obs"
+    assert df.at[0, "metodo_posicionamento"] == "PG1"
+
+
+def test_desfazer_volta_ao_estado_anterior(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    col_codigo = modelo.dataframe().columns.get_loc("codigo")
+    modelo.setData(modelo.index(0, col_codigo), "ORIGINAL", Qt.ItemDataRole.EditRole)
+    modelo.setData(modelo.index(0, col_codigo), "MUDOU", Qt.ItemDataRole.EditRole)
+    assert modelo.dataframe().at[0, "codigo"] == "MUDOU"
+
+    resultado = modelo.desfazer()
+
+    assert resultado is True
+    assert modelo.dataframe().at[0, "codigo"] == "ORIGINAL"
+
+
+def test_desfazer_sem_historico_nao_quebra(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+
+    assert modelo.desfazer() is False
+
+
+def test_ctrl_z_na_view_chama_desfazer(qtbot):
+    from PySide6.QtGui import QKeySequence
+
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    col_codigo = modelo.dataframe().columns.get_loc("codigo")
+    modelo.setData(modelo.index(0, col_codigo), "MUDOU", Qt.ItemDataRole.EditRole)
+    view.setFocus()
+
+    qtbot.keySequence(view, QKeySequence.StandardKey.Undo)
+
+    assert modelo.dataframe().at[0, "codigo"] != "MUDOU"

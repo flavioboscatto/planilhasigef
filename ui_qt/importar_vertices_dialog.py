@@ -379,17 +379,15 @@ class ImportarVerticesDialog(QDialog):
         # não fecha o diálogo: outras versões pendentes (de outros arquivos
         # já importados nesta mesma sessão de importação) continuam
         # disponíveis pra revisar/usar depois — só esta some, usada.
-        df_final = modelo_versao.dataframe()
-        utm_por_codigo = None
         if dados_utm_brutos is not None:
-            # guarda o easting/northing original por código — é o que
-            # permite "Recalcular geodésica" na aba Perímetro depois que
-            # esta versão já foi mesclada na planilha definitiva.
-            utm_por_codigo = {
-                str(codigo): (str(easting), str(northing))
-                for codigo, easting, northing in zip(
-                    df_final["codigo"], dados_utm_brutos["e_long"], dados_utm_brutos["n_lat"]
+            # guarda o easting/northing original DENTRO da própria linha
+            # (colunas internas, ver ui_qt/vertices_table.py) — sobrevive a
+            # Reorganizar/Renumerar depois de mesclado, diferente de um
+            # dicionário à parte indexado por código (que perde o vínculo
+            # assim que o código muda).
+            for pos in range(len(dados_utm_brutos)):
+                modelo_versao.definir_utm_bruto(
+                    pos, dados_utm_brutos["e_long"].iloc[pos], dados_utm_brutos["n_lat"].iloc[pos]
                 )
-            }
-        self._aplicar_versao(df_final, utm_por_codigo)
+        self._aplicar_versao(modelo_versao.dataframe())
         self._remover_versao(bloco)

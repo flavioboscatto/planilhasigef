@@ -14,6 +14,7 @@ import pandas as pd
 
 from core.models import Identificacao, Perimetro
 from core.tabela_vertices import COLUNAS_VERTICE
+from ui_qt.vertices_table import COLUNAS_UTM_INTERNAS
 
 
 def montar_projeto(janela) -> dict:
@@ -67,7 +68,10 @@ def aplicar_projeto(janela, dados: dict) -> None:
         valores = {**base_perimetro, **{k: v for k, v in parcela_dados.items() if k != "vertices" and v is not None}}
         aba.carregar_cabecalho(Perimetro(vertices=[], **valores))
 
-        tabela = pd.DataFrame(parcela_dados.get("vertices", []), columns=COLUNAS_VERTICE)
+        # inclui as colunas internas de UTM (ui_qt/vertices_table.py): sem
+        # isto, "Recalcular geodésica" esquecia a origem de um vértice
+        # importado de UTM assim que o projeto era salvo e reaberto.
+        tabela = pd.DataFrame(parcela_dados.get("vertices", []), columns=COLUNAS_VERTICE + COLUNAS_UTM_INTERNAS)
         aba.modelo_tabela.substituir(tabela)
 
     numeracao = dados.get("numeracao", {})

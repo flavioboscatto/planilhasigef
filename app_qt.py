@@ -64,7 +64,7 @@ class JanelaPrincipal(QMainWindow):
         # 100% da largura da janela, e Renumerar/Atualizar continuam a um
         # clique, sem disputar espaço nem exigir trocar de aba.
         self.abas = QTabWidget()
-        self.painel_numeracao = PainelNumeracao(self.dominios, self._abas_perimetro)
+        self.painel_numeracao = PainelNumeracao(self.dominios, self._abas_perimetro, self._aba_perimetro_atual)
 
         central = QWidget()
         layout_central = QVBoxLayout(central)
@@ -82,6 +82,10 @@ class JanelaPrincipal(QMainWindow):
 
     def _abas_perimetro(self) -> list[AbaPerimetro]:
         return [self.abas.widget(i) for i in range(1, self.abas.count())]
+
+    def _aba_perimetro_atual(self) -> AbaPerimetro | None:
+        widget = self.abas.currentWidget()
+        return widget if isinstance(widget, AbaPerimetro) else None
 
     def _criar_menu(self) -> None:
         menu_arquivo = self.menuBar().addMenu("&Arquivo")
@@ -237,7 +241,7 @@ def main() -> None:
     app.setStyle("Fusion")
     app.setStyleSheet(FOLHA_DE_ESTILO)
     janela = JanelaPrincipal()
-    janela.show()
+    janela.showMaximized()  # aproveita a largura toda — motivo real da Proposta A
     sys.exit(app.exec())
 
 

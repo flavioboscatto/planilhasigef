@@ -41,13 +41,43 @@ def _campo_com_rotulo(rotulo: str, largura: int | None = None) -> tuple[QVBoxLay
 
 
 class PainelNumeracao(QWidget):
-    def __init__(self, dominios: dict, obter_abas_perimetro: Callable[[], list], parent=None) -> None:
+    def __init__(
+        self,
+        dominios: dict,
+        obter_abas_perimetro: Callable[[], list],
+        obter_aba_atual: Callable[[], object | None],
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self._obter_abas = obter_abas_perimetro
+        self._obter_aba_atual = obter_aba_atual
         self._campos_numero: dict[str, QLineEdit] = {}
 
         linha = QHBoxLayout(self)
         linha.setContentsMargins(10, 6, 10, 6)
+
+        # Reorganizar/Marcar/Desmarcar/Desfazer agem só na aba de Parcela
+        # ATUAL; Renumerar/Atualizar correm entre TODAS as parcelas — os 5
+        # (+ Desfazer) ficam juntos aqui porque é assim que o profissional
+        # pediu pra usar, mesmo tendo escopo diferente por baixo.
+        btn_reorganizar = QPushButton("↻ Reorganizar")
+        btn_reorganizar.setToolTip("Reorganiza a grade da parcela aberta agora (mais ao norte, sentido horário).")
+        btn_reorganizar.clicked.connect(self._reorganizar_atual)
+        linha.addWidget(btn_reorganizar)
+
+        btn_marcar = QPushButton("☑ Marcar todos")
+        btn_marcar.setToolTip('Marca "Renumerar?" em toda a grade da parcela aberta agora.')
+        btn_marcar.clicked.connect(lambda: self._definir_renumerar_atual(True))
+        linha.addWidget(btn_marcar)
+
+        btn_desmarcar = QPushButton("☐ Desmarcar todos")
+        btn_desmarcar.setToolTip('Desmarca "Renumerar?" em toda a grade da parcela aberta agora.')
+        btn_desmarcar.clicked.connect(lambda: self._definir_renumerar_atual(False))
+        linha.addWidget(btn_desmarcar)
+
+        linha.addSpacing(8)
+        linha.addWidget(self._separador_vertical())
+        linha.addSpacing(8)
 
         layout_cred, self.campo_credenciado = _campo_com_rotulo("Credenciado", largura=110)
         self.campo_credenciado.setText("")
@@ -94,6 +124,18 @@ class PainelNumeracao(QWidget):
         btn_atualizar.clicked.connect(self._atualizar_tipos)
         linha.addWidget(btn_atualizar)
 
+        linha.addSpacing(8)
+        linha.addWidget(self._separador_vertical())
+        linha.addSpacing(8)
+
+        btn_desfazer = QPushButton("↶ Desfazer (Ctrl+Z)")
+        btn_desfazer.setToolTip(
+            "Volta a grade da parcela aberta agora pro estado de antes da "
+            "última mudança — edição de célula, colar, Reorganizar etc."
+        )
+        btn_desfazer.clicked.connect(self._desfazer_atual)
+        linha.addWidget(btn_desfazer)
+
         linha.addStretch()
 
     def _rotulo_pequeno(self, texto: str) -> QLabel:
@@ -116,6 +158,27 @@ class PainelNumeracao(QWidget):
             return max(1, int(bruto))
         except ValueError:
             return 1
+
+    def _exigir_aba_atual(self):
+        aba = self._obter_aba_atual()
+        if aba is None:
+            QMessageBox.warning(self, "Numeração", "Abra uma aba de Parcela primeiro.")
+        return aba
+
+    def _reorganizar_atual(self) -> None:
+        aba = self._exigir_aba_atual()
+        if aba is not None:
+            aba._reorganizar()
+
+    def _definir_renumerar_atual(self, valor: bool) -> None:
+        aba = self._exigir_aba_atual()
+        if aba is not None:
+            aba.modelo_tabela.definir_coluna("renumerar", valor)
+
+    def _desfazer_atual(self) -> None:
+        aba = self._exigir_aba_atual()
+        if aba is not None and not aba.modelo_tabela.desfazer():
+            QMessageBox.information(self, "Desfazer", "Não há mudança para desfazer nesta parcela.")
 
     def _renumerar(self) -> None:
         credenciado = self.campo_credenciado.text().strip().upper()

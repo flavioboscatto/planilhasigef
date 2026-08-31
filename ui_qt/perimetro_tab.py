@@ -29,7 +29,7 @@ from core.tabela_vertices import linha_para_vertice, preenchido, vertice_para_li
 from core.validators.geometria import reordena_norte_horario
 from ui_qt.importar_vertices_dialog import ImportarVerticesDialog
 from ui_qt.tema_qt import Papel, titulo_secao
-from ui_qt.vertices_table import TabelaVerticesModel, TabelaVerticesView
+from ui_qt.vertices_table import COLUNAS_VERTICE, TabelaVerticesModel, TabelaVerticesView
 
 _CAMPOS_LOTE = {
     "Tipo": "tipo_vertice",
@@ -72,11 +72,6 @@ class AbaPerimetro(QWidget):
         self.indice = indice
         self._dominios = dominios
         self._tema = tema
-        # easting/northing original (antes da conversão) por código de
-        # vértice, só para os que vieram de importação UTM — é o que
-        # permite "Recalcular geodésica" depois de mudar Meridiano/
-        # Hemisfério aqui embaixo, sem precisar reimportar o arquivo.
-        self._utm_brutos: dict[str, tuple[str, str]] = {}
 
         opcoes_tipo_vertice = [t["codigo"] for t in dominios["tipos_vertice"]]
         opcoes_metodo = [m["codigo"] for m in dominios["metodos_posicionamento"]]
@@ -128,17 +123,11 @@ class AbaPerimetro(QWidget):
             )
         )
 
-        barra_acoes = QHBoxLayout()
-        btn_reorganizar = _botao_verde("↻ Reorganizar (mais ao norte, sentido horário)", tema)
-        btn_marcar = _botao_verde("☑ Marcar todos p/ renumerar", tema)
-        btn_desmarcar = _botao_verde("☐ Desmarcar todos", tema)
-        btn_reorganizar.clicked.connect(self._reorganizar)
-        btn_marcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", True))
-        btn_desmarcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", False))
-        barra_acoes.addWidget(btn_reorganizar)
-        barra_acoes.addWidget(btn_marcar)
-        barra_acoes.addWidget(btn_desmarcar)
-        layout.addLayout(barra_acoes)
+        # Reorganizar/Marcar todos/Desmarcar todos/Desfazer moraram aqui
+        # antes — subiram pro painel de Numeração (faixa horizontal acima
+        # das abas), lado a lado com Renumerar/Atualizar, a pedido do
+        # usuário. Os métodos continuam aqui (_reorganizar, modelo_tabela.
+        # desfazer()) porque o painel chama neles na aba atualmente aberta.
 
         linha_lote = QHBoxLayout()
         self.combo_coluna_lote = _combo(list(_CAMPOS_LOTE))
@@ -202,15 +191,20 @@ class AbaPerimetro(QWidget):
         vertices = [linha_para_vertice(linha) for _, linha in preenchidas]
         # reordena_norte_horario só reordena/inverte a lista (não cria Vertice
         # novo), então id(v) ainda identifica a linha original — é assim que
-        # "renumerar" (que não existe em Vertice, só na grade) acompanha o
-        # vértice até a nova posição.
+        # "renumerar" e as colunas internas de UTM (nenhuma das duas existe
+        # em Vertice, só na grade) acompanham o vértice até a nova posição.
         renumerar_por_id = {id(v): bool(linha["renumerar"]) for (_, linha), v in zip(preenchidas, vertices)}
+        utm_por_id = {
+            id(v): (linha.get("_utm_easting", ""), linha.get("_utm_northing", ""))
+            for (_, linha), v in zip(preenchidas, vertices)
+        }
         reordenados = reordena_norte_horario(vertices)
 
         novas_linhas = []
         for v in reordenados:
             nova = vertice_para_linha(v)
             nova["renumerar"] = renumerar_por_id[id(v)]
+            nova["_utm_easting"], nova["_utm_northing"] = utm_por_id[id(v)]
             novas_linhas.append(nova)
         # linhas sem código (vagas em branco, pra próximo vértice) não
         # entram no reordenamento — sem isto, elas simplesmente
@@ -236,41 +230,36 @@ class AbaPerimetro(QWidget):
         )
         dialogo.exec()
 
-    def _aplicar_versao_importada(
-        self, dados_importados: pd.DataFrame, utm_por_codigo: dict[str, tuple[str, str]] | None = None
-    ) -> None:
+    def _aplicar_versao_importada(self, dados_importados: pd.DataFrame) -> None:
+        # mesclar_por_codigo copia QUALQUER coluna presente em
+        # dados_importados, inclusive as internas de UTM (ver
+        # ui_qt/vertices_table.py) — não precisa de nada especial aqui.
         tabela_mesclada, avisos = mesclar_por_codigo(self.modelo_tabela.dataframe(), dados_importados)
         self.modelo_tabela.substituir(tabela_mesclada)
-        if utm_por_codigo:
-            self._utm_brutos.update(utm_por_codigo)
         for aviso in avisos:
             QMessageBox.warning(self, "Importar vértices", aviso)
 
     def _recalcular_utm(self) -> None:
-        if not self._utm_brutos:
+        linhas = self.modelo_tabela.linhas_com_utm_bruto()
+        if not linhas:
             QMessageBox.information(
                 self, "Recalcular geodésica",
-                "Nenhum vértice desta parcela veio de uma importação UTM ainda.",
+                "Nenhum vértice desta parcela veio de uma importação UTM ainda "
+                "(ou os que vieram não guardam mais o dado original).",
             )
             return
         meridiano = float(self.meridiano_central.currentText())
         hemisferio = self.hemisferio.currentText()
-        df = self.modelo_tabela.dataframe()
-        col_elong = df.columns.get_loc("e_long")
-        col_nlat = df.columns.get_loc("n_lat")
-        total = 0
-        for pos, codigo in enumerate(df["codigo"]):
-            bruto = self._utm_brutos.get(str(codigo).strip())
-            if bruto is None:
-                continue
-            easting, northing = bruto
+        col_elong = COLUNAS_VERTICE.index("e_long")
+        col_nlat = COLUNAS_VERTICE.index("n_lat")
+        for pos in linhas:
+            easting, northing = self.modelo_tabela.utm_bruto(pos)
             longitude, latitude = utm_para_geodesica(parse_numero(easting), parse_numero(northing), meridiano, hemisferio)
             self.modelo_tabela.setData(self.modelo_tabela.index(pos, col_elong), normaliza_decimal(str(longitude)), Qt.ItemDataRole.EditRole)
             self.modelo_tabela.setData(self.modelo_tabela.index(pos, col_nlat), normaliza_decimal(str(latitude)), Qt.ItemDataRole.EditRole)
-            total += 1
         QMessageBox.information(
             self, "Recalcular geodésica",
-            f"{total} vértice(s) recalculado(s) com Meridiano {meridiano:g}° / Hemisfério {hemisferio}.",
+            f"{len(linhas)} vértice(s) recalculado(s) com Meridiano {meridiano:g}° / Hemisfério {hemisferio}.",
         )
 
     def modelo(self) -> Perimetro:

@@ -63,6 +63,35 @@ _COLUNAS_CONFRONTANTE = {"tipo_limite", "cns", "matricula", "descritivo"}
 
 _MARCADO = {Qt.CheckState.Checked, Qt.CheckState.Checked.value, 2}
 
+# easting/northing original de quem veio de importação UTM — colunas
+# internas (fora de COLUNAS_VERTICE: não aparecem na grade nem no .ods),
+# mas viajam DENTRO da mesma linha do DataFrame, então sobrevivem a
+# Reorganizar (linha inteira se move junto) e a Renumerar/Atualizar (só
+# mexe na célula "codigo", nunca recria a linha) — ao contrário de um
+# dicionário à parte indexado por código, que perdia o vínculo assim que o
+# código mudava.
+COLUNAS_UTM_INTERNAS = ["_utm_easting", "_utm_northing"]
+
+
+def _normalizar_colunas(df: pd.DataFrame) -> pd.DataFrame:
+    """Reordena pra ordem exata de COLUNAS_VERTICE (+ colunas internas no
+    fim), por NOME — nunca confiar na ordem que um DataFrame chegou.
+    `pd.DataFrame(lista_de_dicts)` usa a ordem das chaves de cada dict, que
+    pode não bater com COLUNAS_VERTICE (foi assim que o Reorganizar
+    corrompeu a tabela: a grade lê/escreve célula por POSIÇÃO, não por nome
+    de coluna — uma ordem diferente faz cada coluna mostrar o dado da
+    vizinha). Coluna ausente (ex.: importação que só mapeou algumas colunas
+    do arquivo) ganha o padrão em vez de quebrar — só a ORDEM é exigida,
+    não o conjunto completo."""
+    df = df.reset_index(drop=True)
+    for coluna in COLUNAS_VERTICE:
+        if coluna not in df.columns:
+            df[coluna] = False if coluna == "renumerar" else ""
+    for coluna in COLUNAS_UTM_INTERNAS:
+        if coluna not in df.columns:
+            df[coluna] = ""
+    return df[COLUNAS_VERTICE + COLUNAS_UTM_INTERNAS]
+
 
 class TabelaVerticesModel(QAbstractTableModel):
     def __init__(
@@ -83,19 +112,41 @@ class TabelaVerticesModel(QAbstractTableModel):
         self._casas_segundos = casas["segundos_gms_casas_decimais"]
         self._casas_sigma = casas["sigma_casas_decimais"]
         self._casas_h = casas["h_casas_decimais"]
-        self._df = (df if df is not None else tabela_vazia()).reset_index(drop=True)
+        self._df = _normalizar_colunas(df if df is not None else tabela_vazia())
+        self._pilha_desfazer: list[pd.DataFrame] = []
 
     # --- leitura/escrita em bloco (usado por quem envolve a grade) ---
 
     def dataframe(self) -> pd.DataFrame:
         return self._df.copy()
 
-    def substituir(self, df: pd.DataFrame) -> None:
+    def _guardar_para_desfazer(self) -> None:
+        self._pilha_desfazer.append(self._df.copy())
+        if len(self._pilha_desfazer) > 50:
+            self._pilha_desfazer.pop(0)
+
+    def desfazer(self) -> bool:
+        """Ctrl+Z — volta pro estado de antes da última mudança (edição de
+        célula, colar, Reorganizar, Renumerar, Preencher em lote...). Sem
+        isso, um resultado errado de qualquer ferramenta que reescreve a
+        tabela inteira só se resolvia fechando e abrindo o programa de
+        novo."""
+        if not self._pilha_desfazer:
+            return False
+        anterior = self._pilha_desfazer.pop()
         self.beginResetModel()
-        self._df = df.reset_index(drop=True)
+        self._df = anterior
+        self.endResetModel()
+        return True
+
+    def substituir(self, df: pd.DataFrame) -> None:
+        self._guardar_para_desfazer()
+        self.beginResetModel()
+        self._df = _normalizar_colunas(df)
         self.endResetModel()
 
     def inserir_linha(self, valores: dict | None = None) -> None:
+        self._guardar_para_desfazer()
         nova = {c: "" for c in COLUNAS_VERTICE}
         nova["renumerar"] = True
         if valores:
@@ -106,6 +157,7 @@ class TabelaVerticesModel(QAbstractTableModel):
         self.endInsertRows()
 
     def remover_linhas(self, posicoes: list[int]) -> None:
+        self._guardar_para_desfazer()
         for pos in sorted(set(posicoes), reverse=True):
             if 0 <= pos < len(self._df):
                 self.beginRemoveRows(QModelIndex(), pos, pos)
@@ -116,6 +168,7 @@ class TabelaVerticesModel(QAbstractTableModel):
         """Preenche uma coluna inteira de uma vez (equivalente ao
         "Preencher em lote" do Streamlit) — uma emissão de dataChanged só,
         não uma por célula."""
+        self._guardar_para_desfazer()
         coluna = COLUNAS_VERTICE.index(campo)
         self._df[campo] = valor
         if len(self._df):
@@ -127,12 +180,30 @@ class TabelaVerticesModel(QAbstractTableModel):
         """Como definir_coluna, mas um valor por linha (não o mesmo valor
         repetido) — usado pra recalcular E/Long e N/Lat de uma importação
         UTM sem mexer nas outras colunas já editadas na grade."""
+        self._guardar_para_desfazer()
         coluna = COLUNAS_VERTICE.index(campo)
         self._df[campo] = list(valores)
         if len(self._df):
             topo_esq = self.index(0, coluna)
             baixo_dir = self.index(len(self._df) - 1, coluna)
             self.dataChanged.emit(topo_esq, baixo_dir, [Qt.ItemDataRole.DisplayRole])
+
+    def definir_utm_bruto(self, posicao: int, easting: str, northing: str) -> None:
+        """Anexa o easting/northing original (pré-conversão) na linha —
+        não passa por dataChanged nem por desfazer: é metadado interno, não
+        um campo visível/editável da grade."""
+        self._df.at[posicao, "_utm_easting"] = str(easting)
+        self._df.at[posicao, "_utm_northing"] = str(northing)
+
+    def utm_bruto(self, posicao: int) -> tuple[str, str] | None:
+        easting = str(self._df.at[posicao, "_utm_easting"]).strip()
+        northing = str(self._df.at[posicao, "_utm_northing"]).strip()
+        if not easting or not northing or easting.lower() == "nan" or northing.lower() == "nan":
+            return None
+        return easting, northing
+
+    def linhas_com_utm_bruto(self) -> list[int]:
+        return [pos for pos in range(len(self._df)) if self.utm_bruto(pos) is not None]
 
     # --- QAbstractTableModel ---
 
@@ -194,12 +265,17 @@ class TabelaVerticesModel(QAbstractTableModel):
             return False
         campo = self._campo(index)
 
+        # uma célula por vez (colar em bloco desfaz célula por célula, não
+        # o bloco inteiro numa tacada só) — mais simples e sempre correto,
+        # mesmo não sendo o Ctrl+Z "perfeito" de um Excel de verdade.
         if campo == "renumerar" and role == Qt.ItemDataRole.CheckStateRole:
+            self._guardar_para_desfazer()
             self._df.iat[index.row(), index.column()] = value in _MARCADO
             self.dataChanged.emit(index, index, [role])
             return True
 
         if role == Qt.ItemDataRole.EditRole:
+            self._guardar_para_desfazer()
             self._df.iat[index.row(), index.column()] = value
             self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole, role])
             return True
@@ -277,6 +353,9 @@ class TabelaVerticesView(QTableView):
         self.setItemDelegateForColumn(COLUNAS_VERTICE.index("tipo_limite"), _ComboDelegate(modelo.opcoes_limite, self))
 
     def keyPressEvent(self, event) -> None:
+        if event.matches(QKeySequence.StandardKey.Undo):
+            self.model().desfazer()
+            return
         if event.matches(QKeySequence.StandardKey.Copy):
             self._copiar()
             return
