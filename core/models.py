@@ -18,7 +18,6 @@ class Identificacao(BaseModel):
     codigo_cartorio_cns: str = ""
     matricula: str = ""
     municipio_1: str = ""
-    municipio_2: str = ""
 
 
 class Vertice(BaseModel):

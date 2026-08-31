@@ -91,6 +91,58 @@ def test_colar_bloco_preenche_varias_celulas_de_uma_vez(qtbot):
     assert df.at[2, "e_long"] == "-48,52"
 
 
+def test_colar_valor_unico_preenche_selecao_inteira_nao_so_a_ultima_celula(qtbot):
+    # bug relatado: selecionar várias células e colar um valor só (Ctrl+C
+    # de UMA célula) só aplicava na última célula da seleção — currentIndex()
+    # é a última clicada, não o topo-esquerda.
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    col_tipo_limite = modelo.dataframe().columns.get_loc("tipo_limite")
+
+    QGuiApplication.clipboard().setText("CO")
+    selecao = view.selectionModel()
+    # seleciona de baixo pra cima, do jeito que um arraste real do mouse de
+    # baixo pra cima deixaria: várias células selecionadas, "atual" sendo a
+    # ÚLTIMA marcada (a de cima), não o topo-esquerda da seleção.
+    for linha in (2, 1, 0):
+        selecao.select(modelo.index(linha, col_tipo_limite), selecao.SelectionFlag.Select)
+
+    view._colar()
+
+    assert list(modelo.dataframe()["tipo_limite"]) == ["CO", "CO", "CO"]
+
+
+def test_colar_bloco_usa_topo_esquerda_da_selecao_nao_a_celula_atual(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    col_codigo = modelo.dataframe().columns.get_loc("codigo")
+
+    QGuiApplication.clipboard().setText("A-1\nA-2\nA-3")
+    selecao = view.selectionModel()
+    for linha in (2, 1, 0):  # seleciona de baixo pra cima, como um arraste real
+        selecao.select(modelo.index(linha, col_codigo), selecao.SelectionFlag.Select)
+
+    view._colar()
+
+    assert list(modelo.dataframe()["codigo"]) == ["A-1", "A-2", "A-3"]
+
+
+def test_copiar_usa_valor_editavel_nao_o_formatado(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    col_elong = modelo.dataframe().columns.get_loc("e_long")
+    modelo.setData(modelo.index(0, col_elong), "-48,548333", Qt.ItemDataRole.EditRole)
+
+    selecao = view.selectionModel()
+    selecao.select(modelo.index(0, col_elong), selecao.SelectionFlag.Select)
+    view._copiar()
+
+    assert QGuiApplication.clipboard().text() == "-48,548333"
+
+
 def test_preencher_para_baixo_copia_valor_do_topo_da_selecao(qtbot):
     view = _nova_view()
     qtbot.addWidget(view)

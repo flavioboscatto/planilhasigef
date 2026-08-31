@@ -20,13 +20,50 @@ from PySide6.QtWidgets import (
 )
 
 from core.models import Identificacao
+from core.parsing import formatar_cpf_cnpj
 from ui_qt.tema_qt import Papel, titulo_secao
+
+# listas de dominio (natureza_area, metodos_posicionamento etc.) tem ate
+# ~27 itens — sem isto, o popup do combo corta em poucas linhas e obriga
+# rolar mesmo pra listas que cabem inteiras na tela.
+_MAX_ITENS_VISIVEIS_COMBO = 20
 
 
 def _combo(itens: list[str]) -> QComboBox:
     caixa = QComboBox()
     caixa.addItems(itens)
+    caixa.setMaxVisibleItems(_MAX_ITENS_VISIVEIS_COMBO)
     return caixa
+
+
+class _CampoCpfCnpj(QLineEdit):
+    """Mascara progressiva: só dígitos entram, o programa monta pontos/
+    barra/traço sozinho — colar de fora com pontuação já formatada também
+    funciona (formatar_cpf_cnpj extrai só os dígitos primeiro)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setMaxLength(18)  # CNPJ formatado: 00.000.000/0000-00
+        self.textEdited.connect(self._reformatar)
+
+    def _reformatar(self, texto: str) -> None:
+        posicao_cursor = self.cursorPosition()
+        digitos_antes = sum(c.isdigit() for c in texto[:posicao_cursor])
+        formatado = formatar_cpf_cnpj(texto)
+
+        nova_posicao = len(formatado)
+        contados = 0
+        for i, c in enumerate(formatado):
+            if contados >= digitos_antes:
+                nova_posicao = i
+                break
+            if c.isdigit():
+                contados += 1
+
+        self.blockSignals(True)
+        self.setText(formatado)
+        self.setCursorPosition(nova_posicao)
+        self.blockSignals(False)
 
 
 def _combo_pesquisavel(itens: list[str]) -> QComboBox:
@@ -60,7 +97,7 @@ class AbaIdentificacao(QWidget):
 
         layout.addWidget(titulo_secao("Identificação do Detentor", tema["detentor_titulo"]))
         self.tipo_pessoa = _combo(dominios["tipo_pessoa"])
-        self.cpf_cnpj = QLineEdit()
+        self.cpf_cnpj = _CampoCpfCnpj()
         self.nome = QLineEdit()
         linha_detentor = QHBoxLayout()
         linha_detentor.addLayout(_form("Tipo pessoa", self.tipo_pessoa), 1)
@@ -83,14 +120,11 @@ class AbaIdentificacao(QWidget):
 
         self.codigo_cartorio_cns = QLineEdit()
         self.matricula = QLineEdit()
-        opcoes_municipio = [""] + municipios
-        self.municipio_1 = _combo_pesquisavel(opcoes_municipio)
-        self.municipio_2 = _combo_pesquisavel(opcoes_municipio)
+        self.municipio_1 = _combo_pesquisavel([""] + municipios)
         linha3 = QHBoxLayout()
         linha3.addLayout(_form("Código do cartório (CNS)", self.codigo_cartorio_cns), 1)
         linha3.addLayout(_form("Matrícula", self.matricula), 1)
-        linha3.addLayout(_form("Município 1", self.municipio_1), 1)
-        linha3.addLayout(_form("Município 2 (opcional)", self.municipio_2), 1)
+        linha3.addLayout(_form("Município", self.municipio_1), 1)
         layout.addLayout(linha3)
 
         layout.addStretch()
@@ -108,14 +142,13 @@ class AbaIdentificacao(QWidget):
             codigo_cartorio_cns=self.codigo_cartorio_cns.text(),
             matricula=self.matricula.text(),
             municipio_1=self.municipio_1.currentText(),
-            municipio_2=self.municipio_2.currentText(),
         )
 
     def carregar(self, dados: Identificacao) -> None:
         self.natureza_servico.setCurrentText(dados.natureza_servico)
         self.tipo_pessoa.setCurrentText(dados.tipo_pessoa)
         self.nome.setText(dados.nome)
-        self.cpf_cnpj.setText(dados.cpf_cnpj)
+        self.cpf_cnpj.setText(formatar_cpf_cnpj(dados.cpf_cnpj))
         self.denominacao_area.setText(dados.denominacao_area)
         self.situacao.setCurrentText(dados.situacao)
         self.natureza_area.setCurrentText(dados.natureza_area)
@@ -123,7 +156,6 @@ class AbaIdentificacao(QWidget):
         self.codigo_cartorio_cns.setText(dados.codigo_cartorio_cns)
         self.matricula.setText(dados.matricula)
         self.municipio_1.setCurrentText(dados.municipio_1)
-        self.municipio_2.setCurrentText(dados.municipio_2)
 
 
 def _form(rotulo: str, campo: QWidget) -> QVBoxLayout:

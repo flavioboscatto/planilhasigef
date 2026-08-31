@@ -16,13 +16,9 @@ identificacao:
     codigo_imovel_sncr: B13
     codigo_cartorio_cns: B14
     matricula: B15
-    # "Município(s):" (A16) tem duas linhas de entrada no modelo (B16 e B17).
-    # Não foi possível confirmar no LibreOffice se B17 é de fato um segundo
-    # município ou outra coisa (é a célula-âncora de uma content-validation
-    # sem lista estática, val2) — municipio_2 é a melhor leitura disponível
-    # do dump, mas precisa ser conferida abrindo o modelo de verdade.
+    # B17 (abaixo de "Município(s):") não é um segundo município — confirmado
+    # pelo usuário na planilha real. Só B16 é usado.
     municipio_1: B16
-    municipio_2: B17
 
 perimetro:
   # Cada parcela é uma aba própria: perimetro_1, perimetro_2, ...

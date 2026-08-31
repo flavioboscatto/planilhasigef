@@ -18,7 +18,7 @@ resolver com um componente só:
 from __future__ import annotations
 
 import pandas as pd
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -230,6 +230,11 @@ class _ComboDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         combo = QComboBox(parent)
         combo.addItems(self._opcoes)
+        combo.setMaxVisibleItems(20)
+        # abre o popup já na hora de entrar na célula — sem isto, dava
+        # duplo clique (que abre o editor) e ainda precisava clicar de
+        # novo só pra ver as opções.
+        QTimer.singleShot(0, combo.showPopup)
         return combo
 
     def setEditorData(self, editor: QComboBox, index) -> None:
@@ -259,7 +264,11 @@ class TabelaVerticesView(QTableView):
             | QAbstractItemView.EditTrigger.AnyKeyPressed
         )
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.horizontalHeader().setStretchLastSection(True)
+        # Sem esticar a última coluna: "descritivo" precisa de largura
+        # própria (3x maior) e continuar redimensionável à mão — a barra de
+        # rolagem horizontal (padrão do QTableView) cobre o resto.
+        self.horizontalHeader().setStretchLastSection(False)
+        self.setColumnWidth(COLUNAS_VERTICE.index("descritivo"), 270)
 
         self.setItemDelegateForColumn(COLUNAS_VERTICE.index("tipo_vertice"), _ComboDelegate(modelo.opcoes_tipo_vertice, self))
         self.setItemDelegateForColumn(
@@ -280,10 +289,14 @@ class TabelaVerticesView(QTableView):
         super().keyPressEvent(event)
 
     def _selecao_por_linha(self) -> dict[int, dict[int, str]]:
+        # EditRole (valor cru), não DisplayRole (formatado em GMS/casas
+        # decimais) — copiar/colar/preencher pra baixo precisam do valor
+        # editável de verdade, senão o texto formatado (ex. "48 32 52,8 W")
+        # ia parar dentro da célula como se fosse o que a pessoa digitou.
         indices = self.selectionModel().selectedIndexes()
         linhas: dict[int, dict[int, str]] = {}
         for indice in indices:
-            linhas.setdefault(indice.row(), {})[indice.column()] = indice.data(Qt.ItemDataRole.DisplayRole) or ""
+            linhas.setdefault(indice.row(), {})[indice.column()] = indice.data(Qt.ItemDataRole.EditRole) or ""
         return linhas
 
     def _copiar(self) -> None:
@@ -299,15 +312,42 @@ class TabelaVerticesView(QTableView):
 
     def _colar(self) -> None:
         texto = QGuiApplication.clipboard().text()
-        atual = self.currentIndex()
-        if not texto or not atual.isValid():
+        if not texto:
             return
         modelo = self.model()
         linhas_texto = texto.replace("\r\n", "\n").rstrip("\n").split("\n")
-        for deslocamento_linha, linha_texto in enumerate(linhas_texto):
-            for deslocamento_coluna, valor in enumerate(linha_texto.split("\t")):
-                linha = atual.row() + deslocamento_linha
-                coluna = atual.column() + deslocamento_coluna
+        bloco = [linha.split("\t") for linha in linhas_texto]
+
+        indices_selecionados = self.selectionModel().selectedIndexes()
+        if not indices_selecionados:
+            atual = self.currentIndex()
+            if not atual.isValid():
+                return
+            indices_selecionados = [atual]
+
+        # âncora = topo-esquerda da SELEÇÃO, não currentIndex(): depois de
+        # selecionar um bloco com o mouse, currentIndex() é a ÚLTIMA célula
+        # clicada (normalmente o canto oposto ao início), não a primeira —
+        # colar a partir dela fazia o bloco colado "vazar" pra fora da
+        # seleção, dando a impressão de que só a última célula recebia o
+        # valor.
+        linha_topo = min(indice.row() for indice in indices_selecionados)
+        coluna_esquerda = min(indice.column() for indice in indices_selecionados)
+
+        if len(bloco) == 1 and len(bloco[0]) == 1 and len(indices_selecionados) > 1:
+            # um valor só copiado, colado numa seleção de várias células:
+            # preenche a seleção inteira (igual Excel/Sheets) em vez de
+            # escrever numa célula só.
+            valor = bloco[0][0]
+            for indice in indices_selecionados:
+                if modelo.flags(indice) & Qt.ItemFlag.ItemIsEditable:
+                    modelo.setData(indice, valor, Qt.ItemDataRole.EditRole)
+            return
+
+        for deslocamento_linha, linha_valores in enumerate(bloco):
+            for deslocamento_coluna, valor in enumerate(linha_valores):
+                linha = linha_topo + deslocamento_linha
+                coluna = coluna_esquerda + deslocamento_coluna
                 if linha >= modelo.rowCount() or coluna >= modelo.columnCount():
                     continue
                 indice = modelo.index(linha, coluna)

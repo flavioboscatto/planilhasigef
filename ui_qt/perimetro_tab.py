@@ -19,8 +19,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PySide6.QtCore import Qt
+
+from core.geo import utm_para_geodesica
 from core.importacao import mesclar_por_codigo
 from core.models import Perimetro
+from core.parsing import normaliza_decimal, parse_numero
 from core.tabela_vertices import linha_para_vertice, preenchido, vertice_para_linha
 from core.validators.geometria import reordena_norte_horario
 from ui_qt.importar_vertices_dialog import ImportarVerticesDialog
@@ -37,6 +41,7 @@ _CAMPOS_LOTE = {
 def _combo(itens: list[str]) -> QComboBox:
     caixa = QComboBox()
     caixa.addItems(itens)
+    caixa.setMaxVisibleItems(20)
     return caixa
 
 
@@ -67,6 +72,11 @@ class AbaPerimetro(QWidget):
         self.indice = indice
         self._dominios = dominios
         self._tema = tema
+        # easting/northing original (antes da conversão) por código de
+        # vértice, só para os que vieram de importação UTM — é o que
+        # permite "Recalcular geodésica" depois de mudar Meridiano/
+        # Hemisfério aqui embaixo, sem precisar reimportar o arquivo.
+        self._utm_brutos: dict[str, tuple[str, str]] = {}
 
         opcoes_tipo_vertice = [t["codigo"] for t in dominios["tipos_vertice"]]
         opcoes_metodo = [m["codigo"] for m in dominios["metodos_posicionamento"]]
@@ -96,9 +106,19 @@ class AbaPerimetro(QWidget):
         linha_cabecalho.addLayout(_form("Hemisfério", self.hemisferio))
         layout.addLayout(linha_cabecalho)
 
+        linha_importar = QHBoxLayout()
         btn_importar = _botao_verde("Importar vértices de um arquivo (TXT/CSV)...", tema)
         btn_importar.clicked.connect(self._abrir_importador)
-        layout.addWidget(btn_importar)
+        linha_importar.addWidget(btn_importar, 2)
+        btn_recalcular_utm = _botao_verde("🔄 Recalcular geodésica (vértices de UTM)", tema)
+        btn_recalcular_utm.setToolTip(
+            "Vértices trazidos de uma importação UTM guardam o easting/northing "
+            "original — mudou o Meridiano Central ou o Hemisfério acima? Clique "
+            "aqui pra recalcular E/Long e N/Lat sem reimportar o arquivo."
+        )
+        btn_recalcular_utm.clicked.connect(self._recalcular_utm)
+        linha_importar.addWidget(btn_recalcular_utm, 1)
+        layout.addLayout(linha_importar)
 
         layout.addWidget(
             QLabel(
@@ -192,6 +212,12 @@ class AbaPerimetro(QWidget):
             nova = vertice_para_linha(v)
             nova["renumerar"] = renumerar_por_id[id(v)]
             novas_linhas.append(nova)
+        # linhas sem código (vagas em branco, pra próximo vértice) não
+        # entram no reordenamento — sem isto, elas simplesmente
+        # desapareciam da tabela depois de Reorganizar.
+        for pos, linha in df.iterrows():
+            if not preenchido(linha["codigo"]):
+                novas_linhas.append(dict(linha))
         self.modelo_tabela.substituir(pd.DataFrame(novas_linhas))
 
     def _abrir_importador(self) -> None:
@@ -210,11 +236,42 @@ class AbaPerimetro(QWidget):
         )
         dialogo.exec()
 
-    def _aplicar_versao_importada(self, dados_importados: pd.DataFrame) -> None:
+    def _aplicar_versao_importada(
+        self, dados_importados: pd.DataFrame, utm_por_codigo: dict[str, tuple[str, str]] | None = None
+    ) -> None:
         tabela_mesclada, avisos = mesclar_por_codigo(self.modelo_tabela.dataframe(), dados_importados)
         self.modelo_tabela.substituir(tabela_mesclada)
+        if utm_por_codigo:
+            self._utm_brutos.update(utm_por_codigo)
         for aviso in avisos:
             QMessageBox.warning(self, "Importar vértices", aviso)
+
+    def _recalcular_utm(self) -> None:
+        if not self._utm_brutos:
+            QMessageBox.information(
+                self, "Recalcular geodésica",
+                "Nenhum vértice desta parcela veio de uma importação UTM ainda.",
+            )
+            return
+        meridiano = float(self.meridiano_central.currentText())
+        hemisferio = self.hemisferio.currentText()
+        df = self.modelo_tabela.dataframe()
+        col_elong = df.columns.get_loc("e_long")
+        col_nlat = df.columns.get_loc("n_lat")
+        total = 0
+        for pos, codigo in enumerate(df["codigo"]):
+            bruto = self._utm_brutos.get(str(codigo).strip())
+            if bruto is None:
+                continue
+            easting, northing = bruto
+            longitude, latitude = utm_para_geodesica(parse_numero(easting), parse_numero(northing), meridiano, hemisferio)
+            self.modelo_tabela.setData(self.modelo_tabela.index(pos, col_elong), normaliza_decimal(str(longitude)), Qt.ItemDataRole.EditRole)
+            self.modelo_tabela.setData(self.modelo_tabela.index(pos, col_nlat), normaliza_decimal(str(latitude)), Qt.ItemDataRole.EditRole)
+            total += 1
+        QMessageBox.information(
+            self, "Recalcular geodésica",
+            f"{total} vértice(s) recalculado(s) com Meridiano {meridiano:g}° / Hemisfério {hemisferio}.",
+        )
 
     def modelo(self) -> Perimetro:
         df = self.modelo_tabela.dataframe()

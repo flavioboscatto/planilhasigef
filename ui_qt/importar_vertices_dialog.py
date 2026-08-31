@@ -343,7 +343,7 @@ class ImportarVerticesDialog(QDialog):
         linha_botoes = QHBoxLayout()
         btn_usar = QPushButton("Usar esta versão na planilha definitiva")
         btn_remover = QPushButton("Remover esta versão")
-        btn_usar.clicked.connect(lambda: self._usar_versao(modelo, bloco))
+        btn_usar.clicked.connect(lambda: self._usar_versao(modelo, bloco, dados_utm_brutos))
         btn_remover.clicked.connect(lambda: self._remover_versao(bloco))
         linha_botoes.addWidget(btn_usar)
         linha_botoes.addWidget(btn_remover)
@@ -373,9 +373,23 @@ class ImportarVerticesDialog(QDialog):
         self.layout_versoes.removeWidget(bloco)
         bloco.deleteLater()
 
-    def _usar_versao(self, modelo_versao: TabelaVerticesModel, bloco: QWidget) -> None:
+    def _usar_versao(
+        self, modelo_versao: TabelaVerticesModel, bloco: QWidget, dados_utm_brutos: pd.DataFrame | None
+    ) -> None:
         # não fecha o diálogo: outras versões pendentes (de outros arquivos
         # já importados nesta mesma sessão de importação) continuam
         # disponíveis pra revisar/usar depois — só esta some, usada.
-        self._aplicar_versao(modelo_versao.dataframe())
+        df_final = modelo_versao.dataframe()
+        utm_por_codigo = None
+        if dados_utm_brutos is not None:
+            # guarda o easting/northing original por código — é o que
+            # permite "Recalcular geodésica" na aba Perímetro depois que
+            # esta versão já foi mesclada na planilha definitiva.
+            utm_por_codigo = {
+                str(codigo): (str(easting), str(northing))
+                for codigo, easting, northing in zip(
+                    df_final["codigo"], dados_utm_brutos["e_long"], dados_utm_brutos["n_lat"]
+                )
+            }
+        self._aplicar_versao(df_final, utm_por_codigo)
         self._remover_versao(bloco)

@@ -80,6 +80,33 @@ def parse_geodesica_compacta(texto: str) -> float:
     return -valor if negativo else valor
 
 
+def formatar_cpf_cnpj(bruto: str) -> str:
+    """Máscara progressiva: só dígitos entram, pontuação é reconstruída —
+    até 11 dígitos vira CPF (000.000.000-00), 12 a 14 vira CNPJ
+    (00.000.000/0000-00). Cola de fora com pontuação e o número (com
+    excesso de dígito) funciona igual: os dígitos são extraídos primeiro.
+    """
+    digitos = "".join(c for c in str(bruto) if c.isdigit())[:14]
+    if len(digitos) <= 11:
+        saida = digitos[:3]
+        if len(digitos) > 3:
+            saida += "." + digitos[3:6]
+        if len(digitos) > 6:
+            saida += "." + digitos[6:9]
+        if len(digitos) > 9:
+            saida += "-" + digitos[9:11]
+        return saida
+    saida = digitos[:2]
+    saida += "." + digitos[2:5]
+    if len(digitos) > 5:
+        saida += "." + digitos[5:8]
+    if len(digitos) > 8:
+        saida += "/" + digitos[8:12]
+    if len(digitos) > 12:
+        saida += "-" + digitos[12:14]
+    return saida
+
+
 def parse_coordenada(texto: str) -> float:
     """Aceita grau decimal ('-48,548') ou GMS ('48 32 52,8 W').
 

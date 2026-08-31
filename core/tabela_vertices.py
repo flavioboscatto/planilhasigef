@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 
 from core.models import Vertice
-from core.parsing import ValorInvalidoError, parse_coordenada, parse_numero
+from core.parsing import ValorInvalidoError, normaliza_decimal, parse_coordenada, parse_numero
 
 COLUNAS_VERTICE = [
     "renumerar",
@@ -81,15 +81,23 @@ def linha_para_vertice(linha) -> Vertice:
 
 
 def vertice_para_linha(v: Vertice) -> dict:
+    # texto com vírgula (normaliza_decimal), não o float cru: a grade
+    # inteira assume que toda célula é texto (é assim que preenchido()/
+    # parse_* funcionam) — devolver float aqui deixava a coluna com tipo
+    # misto depois de operações como Reorganizar, e uma edição posterior
+    # naquela célula podia se perder.
+    def num_txt(valor: float) -> str:
+        return normaliza_decimal(str(valor))
+
     return {
         "codigo": v.codigo,
         "tipo_vertice": v.tipo_vertice,
-        "e_long": v.e_long,
-        "sigma_long": v.sigma_long,
-        "n_lat": v.n_lat,
-        "sigma_lat": v.sigma_lat,
-        "h": v.h,
-        "sigma_h": v.sigma_h,
+        "e_long": num_txt(v.e_long),
+        "sigma_long": num_txt(v.sigma_long),
+        "n_lat": num_txt(v.n_lat),
+        "sigma_lat": num_txt(v.sigma_lat),
+        "h": num_txt(v.h),
+        "sigma_h": num_txt(v.sigma_h),
         "metodo_posicionamento": v.metodo_posicionamento,
         "tipo_limite": v.tipo_limite,
         "cns": v.cns,

@@ -22,6 +22,41 @@ def _nova_aba(indice: int = 1) -> AbaPerimetro:
     return AbaPerimetro(indice, _dominios(), carregar_tema())
 
 
+def test_recalcular_utm_sem_vertice_importado_avisa_e_nao_quebra(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    avisos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: avisos.append(a))
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+
+    aba._recalcular_utm()
+
+    assert avisos
+
+
+def test_recalcular_utm_apos_importacao_usa_meridiano_hemisferio_atuais(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+
+    # simula o que ImportarVerticesDialog faria ao "Usar esta versão"
+    # vinda de uma importação UTM (mesmo mecanismo, sem abrir diálogo)
+    import pandas as pd
+    dados_importados = pd.DataFrame([{"codigo": "AJ4-M-001", "e_long": "0", "n_lat": "0", "tipo_vertice": "", "sigma_long": "", "sigma_lat": "", "h": "", "sigma_h": "", "metodo_posicionamento": "", "tipo_limite": "", "cns": "", "matricula": "", "descritivo": ""}])
+    aba._aplicar_versao_importada(dados_importados, {"AJ4-M-001": ("500000", "7000000")})
+
+    aba.hemisferio.setCurrentText("Sul")
+    aba._recalcular_utm()
+
+    resultado = aba.modelo_tabela.dataframe()
+    linha = resultado[resultado["codigo"] == "AJ4-M-001"].iloc[0]
+    from core.parsing import parse_numero
+    assert parse_numero(linha["n_lat"]) < 0  # Hemisfério Sul -> latitude negativa
+
+
 def test_defaults_batem_com_o_pedido_pelo_usuario(qtbot):
     aba = _nova_aba(1)
     qtbot.addWidget(aba)
@@ -92,6 +127,36 @@ def test_reorganizar_reordena_mantendo_renumerar_por_vertice(qtbot):
     assert bool(resultado.at[0, "renumerar"]) is True
     sul = resultado[resultado["codigo"] == "SUL"].iloc[0]
     assert bool(sul["renumerar"]) is False
+
+
+def test_reorganizar_preserva_linhas_vazias_e_devolve_texto_com_virgula(qtbot):
+    # bug relatado: depois de Reorganizar, linhas em branco (vagas pra
+    # próximo vértice) desapareciam, e os campos numéricos viravam float
+    # cru (ponto decimal) em vez de texto com vírgula.
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    aba.modelo_tabela.inserir_linha()  # 4ª linha, vazia, além das 3 iniciais
+    df = aba.modelo_tabela.dataframe()
+    dados = [
+        {"codigo": "SUL", "e_long": "-48,00", "n_lat": "-10,00", "h": "13,5"},
+        {"codigo": "NORTE", "e_long": "-48,00", "n_lat": "-9,00", "h": "13,6"},
+        {"codigo": "LESTE", "e_long": "-47,50", "n_lat": "-9,50", "h": "13,7"},
+    ]
+    for i, linha in enumerate(dados):
+        for campo, valor in linha.items():
+            coluna = list(df.columns).index(campo)
+            aba.modelo_tabela.setData(aba.modelo_tabela.index(i, coluna), valor, 2)
+
+    aba._reorganizar()
+
+    resultado = aba.modelo_tabela.dataframe()
+    linhas_vazias = resultado[resultado["codigo"].astype(str).str.strip() == ""]
+    assert len(linhas_vazias) == 1  # a 4ª linha, em branco, sobreviveu
+
+    norte = resultado[resultado["codigo"] == "NORTE"].iloc[0]
+    assert isinstance(norte["e_long"], str)
+    assert "," in norte["h"]
+    assert "." not in norte["h"]
 
 
 def test_modelo_le_cabecalho_e_vertices_preenchidos(qtbot):

@@ -84,7 +84,7 @@ def test_usar_versao_chama_callback_com_dados_convertidos_e_remove_bloco(qtbot, 
     _apontar_arquivo(monkeypatch, arquivo)
 
     resultados = []
-    dialogo = _novo_dialogo(resultados.append)
+    dialogo = _novo_dialogo(lambda df, utm=None: resultados.append(df))
     qtbot.addWidget(dialogo)
     dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
     dialogo._escolher_arquivo()
@@ -97,7 +97,7 @@ def test_usar_versao_chama_callback_com_dados_convertidos_e_remove_bloco(qtbot, 
 
     bloco = dialogo.layout_versoes.itemAt(0).widget()
     vista = bloco.findChild(TabelaVerticesView)
-    dialogo._usar_versao(vista.model(), bloco)
+    dialogo._usar_versao(vista.model(), bloco, None)
 
     assert len(resultados) == 1
     assert resultados[0].iloc[0]["codigo"] == "AJ4-M-001"

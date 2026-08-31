@@ -25,6 +25,31 @@ def _nova_aba() -> AbaIdentificacao:
     return AbaIdentificacao(dominios, municipios, tema)
 
 
+def test_nao_tem_mais_municipio_2(qtbot):
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    assert not hasattr(aba, "municipio_2")
+
+
+def test_digitar_cpf_aplica_mascara_progressivamente(qtbot):
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+
+    qtbot.keyClicks(aba.cpf_cnpj, "12345678900")
+
+    assert aba.cpf_cnpj.text() == "123.456.789-00"
+    assert aba.modelo().cpf_cnpj == "123.456.789-00"
+
+
+def test_colar_cpf_ja_pontuado_de_fora_e_aceito(qtbot):
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    aba.cpf_cnpj.setFocus()
+    aba.cpf_cnpj.insert("123.456.789-00")  # simula colar (dispara textEdited)
+
+    assert aba.cpf_cnpj.text() == "123.456.789-00"
+
+
 def test_modelo_inicial_bate_com_primeira_opcao_dos_combos(qtbot):
     aba = _nova_aba()
     qtbot.addWidget(aba)
@@ -70,7 +95,6 @@ def test_carregar_repopula_todos_os_campos(qtbot):
         codigo_cartorio_cns="CNS-9",
         matricula="999",
         municipio_1="Abadia de Goiás-GO",
-        municipio_2="",
     )
     aba.carregar(dados)
 

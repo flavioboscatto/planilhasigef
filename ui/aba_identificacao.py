@@ -60,15 +60,7 @@ def render_identificacao(dominios: dict, municipios: list[str], tema: dict) -> I
     with col2:
         matricula = st.text_input("Matrícula", key="ident_matricula")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        municipio_1 = st.selectbox("Município 1", [""] + municipios, key="ident_municipio_1")
-    with col2:
-        # segunda linha de município do modelo — leitura ainda não
-        # confirmada no LibreOffice, ver nota em config/cell_map.yaml
-        municipio_2 = st.selectbox(
-            "Município 2 (opcional)", [""] + municipios, key="ident_municipio_2"
-        )
+    municipio_1 = st.selectbox("Município", [""] + municipios, key="ident_municipio_1")
 
     return Identificacao(
         natureza_servico=natureza_servico,
@@ -82,5 +74,4 @@ def render_identificacao(dominios: dict, municipios: list[str], tema: dict) -> I
         codigo_cartorio_cns=codigo_cartorio_cns,
         matricula=matricula,
         municipio_1=municipio_1,
-        municipio_2=municipio_2,
     )
