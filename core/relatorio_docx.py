@@ -21,10 +21,10 @@ from datetime import datetime
 
 from docx import Document
 from docx.enum.section import WD_ORIENT, WD_SECTION
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt, RGBColor
+from docx.shared import Cm, Pt, RGBColor
 from docx.table import Table
 
 from core.formatacao_vertices import COLUNAS_OFICIAIS, ROTULOS_OFICIAIS, linhas_formatadas
@@ -32,6 +32,36 @@ from core.models import Identificacao, Perimetro
 
 _PRETO = RGBColor(0, 0, 0)
 _TAMANHO_TABELA = Pt(8)
+
+# pedido do usuário: margem esquerda maior que as demais (encadernação).
+_MARGEM_ESQUERDA = Cm(2)
+_MARGEM_OUTRAS = Cm(1)
+
+# larguras da tabela Planilha SIGEF (cm) — Met.Posic./Tipo Limite/CNS/
+# Matrícula "justas" (só o necessário pro cabeçalho, pedido do usuário),
+# Descritivo ganha o espaço que sobra pro texto livre.
+_LARGURAS_PLANILHA_CM = {
+    "codigo": 2.0,
+    "e_long": 2.2,
+    "sigma_long": 1.3,
+    "n_lat": 2.3,
+    "sigma_lat": 1.3,
+    "h": 1.3,
+    "sigma_h": 1.4,
+    "metodo_posicionamento": 1.6,
+    "tipo_limite": 1.6,
+    "cns": 0.9,
+    "matricula": 1.4,
+    "descritivo": 6.0,
+}
+
+# cabeçalho da Planilha SIGEF em 2 linhas só onde ficava apertado (Sigma
+# Long/Sigma Lat, pedido explícito) — o resto continua numa linha só.
+_CABECALHO_PLANILHA = {
+    **ROTULOS_OFICIAIS,
+    "sigma_long": "Sigma\nLong",
+    "sigma_lat": "Sigma\nLat",
+}
 
 _ROTULOS_IDENTIFICACAO = {
     "natureza_servico": "Natureza do serviço",
@@ -60,6 +90,38 @@ def _formatar_celula(celula, tamanho: Pt, negrito: bool = False) -> None:
             _pintar_de_preto(run)
 
 
+def _escrever_texto(celula, texto: str) -> None:
+    """Como `celula.text = texto`, mas um "\\n" na string vira quebra de
+    linha DENTRO da célula (mesmo parágrafo) em vez de aparecer literal —
+    usado pelo cabeçalho de Sigma Long/Sigma Lat na Planilha SIGEF."""
+    linhas = str(texto).split("\n")
+    paragrafo = celula.paragraphs[0]
+    run = paragrafo.add_run(linhas[0])
+    for linha_extra in linhas[1:]:
+        run.add_break(WD_BREAK.LINE)
+        run.add_text(linha_extra)
+
+
+def _definir_larguras(tabela: Table, larguras_cm: list[float]) -> None:
+    """python-docx exige largura em CADA célula da coluna, não só no
+    `tblGrid` (senão o Word ignora e recalcula sozinho) — por isso ainda
+    desliga o autofit da tabela inteira."""
+    tabela.autofit = False
+    tabela.allow_autofit = False
+    for indice, largura_cm in enumerate(larguras_cm):
+        largura = Cm(largura_cm)
+        tabela.columns[indice].width = largura
+        for linha in tabela.rows:
+            linha.cells[indice].width = largura
+
+
+def _aplicar_margens(secao) -> None:
+    secao.left_margin = _MARGEM_ESQUERDA
+    secao.right_margin = _MARGEM_OUTRAS
+    secao.top_margin = _MARGEM_OUTRAS
+    secao.bottom_margin = _MARGEM_OUTRAS
+
+
 def _bordas_pretas(tabela: Table) -> None:
     """python-docx não força cor de borda por estilo de tabela (algumas,
     como "Table Grid", herdam de tema) — desenha a borda preta direto no
@@ -84,12 +146,12 @@ def _tabela(doc: Document, cabecalhos: list[str], linhas: list[list[str]]) -> Ta
     tabela = doc.add_table(rows=1, cols=len(cabecalhos))
     tabela.style = "Table Grid"
     for celula, texto in zip(tabela.rows[0].cells, cabecalhos):
-        celula.text = str(texto)
+        _escrever_texto(celula, texto)
         _formatar_celula(celula, _TAMANHO_TABELA, negrito=True)
     for linha in linhas:
         celulas = tabela.add_row().cells
         for celula, texto in zip(celulas, linha):
-            celula.text = "" if texto is None else str(texto)
+            _escrever_texto(celula, "" if texto is None else texto)
             _formatar_celula(celula, _TAMANHO_TABELA)
     _bordas_pretas(tabela)
     return tabela
@@ -122,6 +184,7 @@ def _configurar_cabecalho_e_rodape(doc: Document) -> None:
     Planilha SIGEF) ficam "vinculadas à anterior" por padrão do
     python-docx/Word, então herdam isto automaticamente."""
     secao = doc.sections[0]
+    _aplicar_margens(secao)
 
     paragrafo_cabecalho = secao.header.paragraphs[0]
     paragrafo_cabecalho.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -142,6 +205,7 @@ def _iniciar_secao_paisagem(doc: Document):
     secao.orientation = WD_ORIENT.LANDSCAPE
     secao.page_width = largura
     secao.page_height = altura
+    _aplicar_margens(secao)
     return secao
 
 
@@ -151,6 +215,7 @@ def _iniciar_secao_retrato(doc: Document):
     secao.orientation = WD_ORIENT.PORTRAIT
     secao.page_width = largura
     secao.page_height = altura
+    _aplicar_margens(secao)
     return secao
 
 
@@ -205,9 +270,11 @@ def gerar_relatorio(identificacao: Identificacao, parcelas: list[dict], casas: d
         # fim do documento.
         _iniciar_secao_paisagem(doc)
         _titulo_preto(doc, "Planilha SIGEF", 3)
-        cabecalhos = [ROTULOS_OFICIAIS[c] for c in COLUNAS_OFICIAIS]
+        cabecalhos = [_CABECALHO_PLANILHA[c] for c in COLUNAS_OFICIAIS]
         linhas = [[linha[c] for c in COLUNAS_OFICIAIS] for linha in linhas_formatadas(perimetro, casas)]
-        _tabela(doc, cabecalhos, linhas)
+        tabela_planilha = _tabela(doc, cabecalhos, linhas)
+        if tabela_planilha is not None:
+            _definir_larguras(tabela_planilha, [_LARGURAS_PLANILHA_CM[c] for c in COLUNAS_OFICIAIS])
         # só volta pra retrato se ainda vier outra parcela depois — senão
         # sobra uma página em branco no fim do documento (quebra de seção
         # sempre começa página nova, mesmo sem conteúdo nenhum atrás dela).

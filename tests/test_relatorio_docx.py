@@ -10,7 +10,7 @@ from docx import Document
 from docx.enum.section import WD_ORIENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
-from docx.shared import Pt, RGBColor
+from docx.shared import Cm, Pt, RGBColor
 
 from core.models import Identificacao, Perimetro, Vertice
 from core.relatorio_docx import gerar_relatorio
@@ -154,3 +154,54 @@ def test_rodape_tem_nome_do_programa_e_data_de_emissao():
     texto_rodape = doc.sections[0].footer.paragraphs[0].text
     assert "Planilha SIGEF" in texto_rodape
     assert datetime.now().strftime("%d/%m/%Y") in texto_rodape
+
+
+def test_margens_esquerda_2cm_demais_1cm_em_todas_as_secoes():
+    identificacao = Identificacao()
+    parcelas = [
+        {"perimetro": Perimetro(vertices=[Vertice(codigo="A", e_long=-48.0, n_lat=-9.0)]), "importacoes": []},
+        {"perimetro": Perimetro(vertices=[Vertice(codigo="B", e_long=-47.0, n_lat=-8.0)]), "importacoes": []},
+    ]
+
+    saida = gerar_relatorio(identificacao, parcelas, _CASAS)
+    doc = Document(io.BytesIO(saida))
+
+    # comparação aproximada: conversão cm -> twips (unidade real do XML de
+    # margem) -> EMU não bate byte a byte, só na casa do 0,01 mm.
+    assert len(doc.sections) > 1
+    for secao in doc.sections:
+        assert abs(secao.left_margin - Cm(2)) < Cm(0.01)
+        assert abs(secao.right_margin - Cm(1)) < Cm(0.01)
+        assert abs(secao.top_margin - Cm(1)) < Cm(0.01)
+        assert abs(secao.bottom_margin - Cm(1)) < Cm(0.01)
+
+
+def test_planilha_sigef_tem_colunas_justas_e_descritivo_mais_largo():
+    identificacao = Identificacao()
+    parcelas = [{"perimetro": Perimetro(vertices=[Vertice(codigo="A", e_long=-48.0, n_lat=-9.0)]), "importacoes": []}]
+
+    saida = gerar_relatorio(identificacao, parcelas, _CASAS)
+    doc = Document(io.BytesIO(saida))
+
+    tabela_planilha = doc.tables[-1]
+    larguras = [celula.width for celula in tabela_planilha.rows[0].cells]
+    cabecalhos = [c.text for c in tabela_planilha.rows[0].cells]
+
+    largura_cns = larguras[cabecalhos.index("CNS")]
+    largura_descritivo = larguras[cabecalhos.index("Descritivo")]
+    assert largura_cns < largura_descritivo
+    assert abs(largura_descritivo - Cm(6.0)) < Cm(0.01)
+
+
+def test_cabecalho_sigma_long_e_sigma_lat_quebra_em_duas_linhas():
+    identificacao = Identificacao()
+    parcelas = [{"perimetro": Perimetro(vertices=[Vertice(codigo="A", e_long=-48.0, n_lat=-9.0)]), "importacoes": []}]
+
+    saida = gerar_relatorio(identificacao, parcelas, _CASAS)
+    doc = Document(io.BytesIO(saida))
+
+    tabela_planilha = doc.tables[-1]
+    cabecalhos = [c.text for c in tabela_planilha.rows[0].cells]
+    # python-docx devolve o texto da célula com "\n" onde há quebra de linha
+    assert "Sigma\nLong" in cabecalhos
+    assert "Sigma\nLat" in cabecalhos
