@@ -77,7 +77,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,  # mantém o console aberto por enquanto para ver erro; tirar depois de validar
+    console=False,
     disable_windowed_traceback=False,
     icon="assets/icone_app.ico",
 )

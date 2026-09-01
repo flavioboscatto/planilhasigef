@@ -27,13 +27,14 @@ from PySide6.QtWidgets import (
 )
 
 from core.importacao import mesclar_por_codigo
-from core.models import Perimetro
+from core.models import Perimetro, Vertice
 from core.tabela_vertices import linha_para_vertice, preenchido, vertice_para_linha
-from core.validators.geometria import reordena_norte_horario
+from core.validators.geometria import reordena_norte_horario, verificar_autointersecao
 from ui_qt.importacao_tab import AbaImportacao
 from ui_qt.importar_vertices_dialog import ImportarVerticesDialog
 from ui_qt.tema_qt import MAX_ITENS_VISIVEIS_COMBO, Papel, botao_verde, titulo_secao
 from ui_qt.vertices_table import TabelaVerticesModel, TabelaVerticesView
+from ui_qt.visualizar_parcela_dialog import VisualizarParcelaDialog
 
 _CAMPOS_LOTE = {
     "Tipo": "tipo_vertice",
@@ -78,6 +79,7 @@ class AbaPerimetro(QWidget):
         self._painel_numeracao = painel_numeracao
         self._proxima_importacao = 1
         self._dialogo_importacao: ImportarVerticesDialog | None = None
+        self._dialogo_visualizacao: VisualizarParcelaDialog | None = None
 
         opcoes_tipo_vertice = [t["codigo"] for t in dominios["tipos_vertice"]]
         opcoes_metodo = [m["codigo"] for m in dominios["metodos_posicionamento"]]
@@ -202,6 +204,18 @@ class AbaPerimetro(QWidget):
         barra_linhas.addWidget(btn_descer_linha)
         layout_aba_tabela.addLayout(barra_linhas)
 
+        # fileira própria, não mexe no 2x4 já fechado a pedido do usuário —
+        # visualizar é uma conferência, não uma ação sobre a grade.
+        barra_visualizacao = QHBoxLayout()
+        btn_visualizar = _botao_grade("🔍 Visualizar parcela")
+        btn_visualizar.setToolTip(
+            "Desenha os vértices e o perímetro fechado desta parcela, avisando se "
+            "algum lado se cruza com outro."
+        )
+        btn_visualizar.clicked.connect(self._abrir_visualizacao)
+        barra_visualizacao.addWidget(btn_visualizar)
+        layout_aba_tabela.addLayout(barra_visualizacao)
+
         self.subabas.addTab(aba_tabela, "Tabela de Perímetro")
 
     def _atualizar_opcoes_lote(self, escolha: str) -> None:
@@ -275,6 +289,35 @@ class AbaPerimetro(QWidget):
             if not preenchido(linha["codigo"]):
                 novas_linhas.append(dict(linha))
         self.modelo_tabela.substituir(pd.DataFrame(novas_linhas))
+
+        # Reorganizar só rotaciona/inverte a ordem existente — se os
+        # vértices já estavam fora de sequência (perímetro "borboleta"),
+        # isso continua depois de reorganizado; avisa mas não bloqueia.
+        cruzamentos = verificar_autointersecao(reordenados)
+        if cruzamentos:
+            mensagens = "\n".join(c.mensagem for c in cruzamentos)
+            QMessageBox.warning(
+                self, "Reorganizar",
+                f"Atenção: o perímetro reorganizado tem lados que se cruzam.\n\n{mensagens}",
+            )
+
+    def _vertices_preenchidos(self) -> list[Vertice]:
+        df = self.modelo_tabela.dataframe()
+        return [linha_para_vertice(linha) for _, linha in df.iterrows() if preenchido(linha["codigo"])]
+
+    def _abrir_visualizacao(self) -> None:
+        # não-modal, mesmo motivo de _abrir_importador: segura a referência
+        # viva (senão o Python coletaria o objeto e a janela sumiria
+        # sozinha) e deixa o usuário continuar editando a grade por trás,
+        # clicando "Atualizar" no diálogo pra ver o resultado novo.
+        self._dialogo_visualizacao = VisualizarParcelaDialog(
+            obter_vertices=self._vertices_preenchidos,
+            meridiano_central=float(self.meridiano_central.currentText()),
+            hemisferio=self.hemisferio.currentText(),
+            parent=self,
+        )
+        self._dialogo_visualizacao.setModal(False)
+        self._dialogo_visualizacao.show()
 
     def _abrir_importador(self) -> None:
         # não-modal (.show(), não .exec()): o usuário precisa poder ir até a

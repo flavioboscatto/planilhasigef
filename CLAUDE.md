@@ -57,29 +57,44 @@ app_qt.py                    entrypoint (QApplication/QMainWindow) — menu Arqu
                               abas (Identificação + parcelas), toolbar de parcelas
 core/template_loader.py      carrega o modelo local + sha256 (cache em memória)
 core/ods_writer.py           escrita e clonagem de abas de perímetro
-core/tabela_vertices.py      conversão DataFrame <-> Vertice (Pydantic)
-core/importacao.py           mesclar_por_codigo (importação de vértices)
+core/tabela_vertices.py      conversão DataFrame <-> Vertice (Pydantic); coluna
+                              "pt_original" (ajuda de tela, nunca vai pro ODS)
+core/importacao.py           mesclar_por_codigo (importação de vértices, casa por
+                              Pt.Original antes do código — sobrevive à renumeração)
 core/numeracao.py            renumerar_parcelas, atualizar_tipos_parcelas
 core/parsing.py              parse de número/coordenada/CPF-CNPJ tolerante a formato
+core/formatacao_vertices.py  formata vértices igual à planilha final (GMS, casas
+                              decimais) — reaproveitado por exportacao_txt/relatorio_docx
+core/exportacao_txt.py       exporta a Tabela de Perímetro em TXT (colunas oficiais)
+core/relatorio_docx.py       gera o Relatório em DOCX (identificação + por parcela:
+                              resumo, importações, planilha em página paisagem)
 core/models.py               Pydantic: Identificacao, Perimetro, Vertice
-core/validators/geometria.py reordena_norte_horario (usado por "Reorganizar")
-core/geo.py                  pyproj (conversão UTM <-> geodésica)
+core/validators/geometria.py reordena_norte_horario (usado por "Reorganizar") e
+                              verificar_autointersecao (V3, via shapely)
+core/geo.py                  pyproj (conversão UTM <-> Geodésica e o inverso,
+                              Geodésica -> UTM, usado só pra desenhar a parcela)
 core/projeto.py              serialização do projeto .sigefproj (ver regra 6)
 ui_qt/vertices_table.py      grade de vértices (QTableView) — única porta de
                               entrada pra essa grade; nenhum outro módulo a redesenha
+ui_qt/visualizar_parcela_dialog.py  diálogo "Visualizar parcela" (V3): desenho
+                              nativo Qt (QGraphicsView) dos vértices + polilinha
 ui_qt/perimetro_tab.py       aba de uma parcela: cabeçalho + grade + sub-abas de importação
 ui_qt/importacao_tab.py      sub-aba "Importação N" persistente dentro da parcela
 ui_qt/importar_vertices_dialog.py  diálogo de importação de arquivo (TXT/CSV)
 ui_qt/identificacao_tab.py   aba Identificação
-ui_qt/renumeracao_panel.py   painel de numeração (faixa acima das abas)
-ui_qt/projeto_qt.py          monta/aplica o projeto .sigefproj a partir da janela
+ui_qt/renumeracao_panel.py   painel de numeração (faixa acima das abas) + botões de
+                              exportação (planilha/.txt/.docx)
+ui_qt/relatorio_qt.py        recolhe dados das abas ao vivo pro core/relatorio_docx.py
+ui_qt/projeto_qt.py          monta/aplica o projeto .sigefproj a partir da janela,
+                              inclusive qual aba/sub-aba estava aberta ao salvar
 ui_qt/tema_qt.py             cores do modelo oficial (config/theme_tokens.json) em Qt
 ui_qt/estilo_qt.py           folha de estilo (QSS) global do app
 importers/delimitado.py      leitura de arquivo TXT/CSV pra importação
 config/                      cell_map.yaml, dominios.json, theme_tokens.json, municipios.json
 assets/icone_app.ico         ícone do app (barra de título/tarefas e do .exe)
+assets/abertura.png          imagem da splash screen (app_qt.py::main, ~3s na abertura)
 tools/                       inspect_template.py, extract_theme.py, gerar_icone.py
-sigef_qt.spec                empacotamento PyInstaller (.exe onefile)
+sigef_qt.spec                empacotamento PyInstaller (.exe onefile, sem console)
 tests/                       um arquivo de teste por módulo de ui_qt/ + core/
 ```
 
@@ -114,14 +129,24 @@ dizia isso no próprio docstring antes da migração). O que existe de fato:
 - máscara progressiva de CPF/CNPJ (`core/parsing.py::formatar_cpf_cnpj`) —
   só formata a pontuação, não confere dígito verificador;
 - `core/validators/geometria.py::reordena_norte_horario` — reordena a
-  pedido do usuário (botão "Reorganizar"), não valida nem avisa sozinho.
+  pedido do usuário (botão "Reorganizar"), não valida nem avisa sozinho;
+- `core/validators/geometria.py::verificar_autointersecao` (V3) — detecta
+  lados do perímetro que se cruzam ("borboleta"), via shapely, só
+  topológico (grau decimal cru, sem projeção — ver docstring da função pro
+  porquê disso ser válido). Chamada depois de "Reorganizar" (avisa, não
+  bloqueia) e dentro do diálogo "Visualizar parcela"
+  (`ui_qt/visualizar_parcela_dialog.py`, desenha o lado problemático em
+  vermelho). Devolve `Cruzamento(indice_a, indice_b, mensagem)`, não o
+  `Ocorrencia` abaixo — aquele é pra problema de uma célula, isto é uma
+  relação entre dois lados.
 
 Ainda não implementado: padrão/unicidade do código de vértice, sigma ×
 tipo de limite (0,50 / 3,00 / 7,50 m), limites de coordenada UTM por
 hemisfério, regra do confrontante (CNS+matrícula e/ou descritivo),
-fechamento e simplicidade do polígono, cruzamento entre perímetros. Se for
-construir isso, `Ocorrencia(severidade, aba, linha, campo, mensagem)` era
-o formato de retorno planejado — não existe ainda no código.
+fechamento do polígono, cruzamento entre perímetros/parcelas (autointerseção
+DENTRO de um perímetro já existe, ver acima). Se for construir isso,
+`Ocorrencia(severidade, aba, linha, campo, mensagem)` era o formato de
+retorno planejado — não existe ainda no código.
 
 Impossível offline (depende do banco do INCRA), mesmo depois de
 implementado o resto: existência do CNS, validade do código de

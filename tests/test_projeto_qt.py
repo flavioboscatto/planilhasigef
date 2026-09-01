@@ -65,6 +65,69 @@ def test_round_trip_preserva_pt_original(qtbot):
     assert nova_aba.modelo_tabela.dataframe().at[0, "codigo"] == "AJ4-M-001"
 
 
+def test_reabrir_projeto_volta_para_a_subaba_que_estava_aberta_ao_salvar(qtbot):
+    # bug relatado: criar uma importação deixa "Importação N" em foco
+    # (efeito colateral de _criar_aba_importacao) — reabrir o projeto
+    # sempre pousava lá, mesmo quando o usuário tinha voltado pra Tabela
+    # de Perímetro antes de salvar.
+    import pandas as pd
+
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    aba = janela._abas_perimetro()[0]
+    dados_importados = pd.DataFrame({"codigo": ["A"], "e_long": ["-48,00"], "n_lat": ["-9,00"]})
+    aba._criar_aba_importacao(dados_importados, None, -51.0, "Sul")
+    assert aba.subabas.currentIndex() == 1  # foco foi pra Importação 1 (comportamento normal)
+
+    aba.subabas.setCurrentIndex(0)  # usuário volta pra Tabela de Perímetro antes de salvar
+
+    dados = desserializar(serializar(montar_projeto(janela)))
+
+    nova = JanelaPrincipal()
+    qtbot.addWidget(nova)
+    aplicar_projeto(nova, dados)
+
+    nova_aba = nova._abas_perimetro()[0]
+    assert nova_aba.subabas.currentIndex() == 0
+
+
+def test_reabrir_projeto_com_varias_parcelas_volta_para_a_parcela_aberta_ao_salvar(qtbot):
+    # mesmo bug, um nível acima: _adicionar_aba_parcela deixa a última
+    # parcela recriada em foco — reabrir sempre pousava nela, mesmo tendo
+    # sido a Parcela 1 a aba aberta quando o usuário salvou.
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    janela._adicionar_aba_parcela()  # Parcela 2 fica em foco (comportamento normal)
+    assert janela.abas.currentIndex() == 2
+
+    janela.abas.setCurrentIndex(1)  # usuário volta pra Parcela 1 antes de salvar
+
+    dados = desserializar(serializar(montar_projeto(janela)))
+
+    nova = JanelaPrincipal()
+    qtbot.addWidget(nova)
+    aplicar_projeto(nova, dados)
+
+    assert nova.abas.currentIndex() == 1
+
+
+def test_abrir_projeto_de_versao_antiga_sem_parcela_atual_usa_parcela_1_tabela_perimetro(qtbot):
+    # arquivo salvo antes deste campo existir (sem "parcela_atual" nem
+    # "subaba_atual") não pode quebrar nem sobrar em índice inválido — cai
+    # no default (Parcela 1, Tabela de Perímetro), que é o que o usuário
+    # pediu como comportamento padrão.
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    dados = desserializar(serializar(montar_projeto(janela)))
+    del dados["parcela_atual"]
+    del dados["parcelas"][0]["subaba_atual"]
+
+    aplicar_projeto(janela, dados)
+
+    assert janela.abas.currentIndex() == 1
+    assert janela._abas_perimetro()[0].subabas.currentIndex() == 0
+
+
 def test_round_trip_preserva_abas_de_importacao(qtbot):
     # reclamação do usuário: fechar e reabrir o projeto perdia as abas
     # "Importação N" (a Tabela de Perímetro já mesclada continuava, só a

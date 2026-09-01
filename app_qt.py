@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QMainWindow,
     QMessageBox,
+    QSplashScreen,
     QTabWidget,
     QToolBar,
     QVBoxLayout,
@@ -36,7 +39,9 @@ from ui_qt.tema_qt import carregar_tema
 
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
 ICONE_APP = Path(__file__).resolve().parent / "assets" / "icone_app.ico"
+ABERTURA_PNG = Path(__file__).resolve().parent / "assets" / "abertura.png"
 TITULO_APP = "Planilha SIGEF por Prof. Flavio Boscatto - IFSC"
+_DURACAO_MINIMA_ABERTURA_MS = 3000
 
 
 def _carregar_json(nome_arquivo: str):
@@ -295,8 +300,36 @@ def main() -> None:
         # próprio .exe (sigef_qt.spec: icon=...) só cobre o Explorer, não a
         # janela em si.
         app.setWindowIcon(QIcon(str(ICONE_APP)))
+
+    splash = None
+    inicio = time.monotonic()
+    if ABERTURA_PNG.exists():
+        pixmap = QPixmap(str(ABERTURA_PNG))
+        if pixmap.width() > 480:
+            pixmap = pixmap.scaledToWidth(480, Qt.TransformationMode.SmoothTransformation)
+        splash = QSplashScreen(pixmap)
+        splash.show()
+        # sem isto a splash só pinta na tela quando o loop de eventos rodar
+        # de verdade (app.exec(), lá embaixo) — tarde demais, já que
+        # JanelaPrincipal() ainda vai ser construída antes disso.
+        app.processEvents()
+
     janela = JanelaPrincipal()
-    janela.showMaximized()  # aproveita a largura toda — motivo real da Proposta A
+
+    def _mostrar_janela_principal() -> None:
+        janela.showMaximized()  # aproveita a largura toda — motivo real da Proposta A
+        if splash is not None:
+            splash.finish(janela)
+
+    if splash is not None:
+        # 3s no total, ou o tempo que a abertura já tiver consumido até
+        # aqui (import + construção da janela) — o que for maior, sem
+        # cortar a splash antes da hora nem prender além do necessário.
+        decorrido_ms = int((time.monotonic() - inicio) * 1000)
+        QTimer.singleShot(max(0, _DURACAO_MINIMA_ABERTURA_MS - decorrido_ms), _mostrar_janela_principal)
+    else:
+        _mostrar_janela_principal()
+
     sys.exit(app.exec())
 
 

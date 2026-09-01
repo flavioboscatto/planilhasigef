@@ -192,6 +192,78 @@ def test_reorganizar_exige_pelo_menos_tres_vertices(qtbot, monkeypatch):
     assert aba.modelo_tabela.rowCount() == 3
 
 
+def test_reorganizar_avisa_quando_poligono_fica_autointersectante(qtbot, monkeypatch):
+    # Reorganizar só rotaciona/inverte a ordem existente — se os vértices já
+    # formavam uma "borboleta", ela continua depois de reorganizado; o
+    # aviso extra (V3) é o único jeito de o usuário descobrir isso aqui.
+    from PySide6.QtWidgets import QMessageBox
+
+    avisos = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: avisos.append(a))
+
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    aba.modelo_tabela.inserir_linha()  # 4ª linha, pra formar um quadrilátero
+    df = aba.modelo_tabela.dataframe()
+    dados = [
+        ("A", "-48,00", "-9,00"),
+        ("B", "-47,90", "-9,10"),
+        ("C", "-47,90", "-9,00"),
+        ("D", "-48,00", "-9,10"),
+    ]
+    for i, (codigo, e_long, n_lat) in enumerate(dados):
+        for campo, valor in (("codigo", codigo), ("e_long", e_long), ("n_lat", n_lat)):
+            aba.modelo_tabela.setData(aba.modelo_tabela.index(i, list(df.columns).index(campo)), valor, 2)
+
+    aba._reorganizar()
+
+    assert len(avisos) == 1
+    assert "cruza" in avisos[0][-1]
+
+
+def test_reorganizar_com_poligono_simples_nao_avisa_de_cruzamento(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    avisos = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: avisos.append(a))
+
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    df = aba.modelo_tabela.dataframe()
+    dados = [("A", "-48,00", "-9,00"), ("B", "-47,90", "-9,10"), ("C", "-48,10", "-9,10")]
+    for i, (codigo, e_long, n_lat) in enumerate(dados):
+        for campo, valor in (("codigo", codigo), ("e_long", e_long), ("n_lat", n_lat)):
+            aba.modelo_tabela.setData(aba.modelo_tabela.index(i, list(df.columns).index(campo)), valor, 2)
+
+    aba._reorganizar()
+
+    assert avisos == []
+
+
+def test_abrir_visualizacao_cria_dialogo_nao_modal(qtbot):
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+
+    aba._abrir_visualizacao()
+
+    assert aba._dialogo_visualizacao is not None
+    assert aba._dialogo_visualizacao.isModal() is False
+
+
+def test_botao_visualizar_parcela_esta_conectado_de_verdade(qtbot):
+    # clique real no botão (não chamada direta do método) — confere que a
+    # conexão .clicked.connect foi feita, não só que o método existe.
+    from PySide6.QtWidgets import QPushButton
+
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    botao = next(b for b in aba.findChildren(QPushButton) if "Visualizar parcela" in b.text())
+
+    botao.click()
+
+    assert aba._dialogo_visualizacao is not None
+
+
 def test_reorganizar_funciona_com_coordenadas_digitadas_em_gms(qtbot):
     # pedido explícito do usuário: conferir que "mais ao norte" e "sentido
     # horário" funcionam certo quando a célula tem texto GMS de verdade

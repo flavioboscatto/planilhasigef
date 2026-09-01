@@ -33,3 +33,18 @@ def utm_para_geodesica(
     )
     longitude, latitude = transformador.transform(easting, northing)
     return longitude, latitude
+
+
+def geodesica_para_utm(
+    longitude: float, latitude: float, meridiano_central: float, hemisferio: str
+) -> tuple[float, float]:
+    """Inverso de utm_para_geodesica — devolve (easting, northing) em
+    metros. Usado pra desenhar a parcela em proporção real (ui_qt/
+    visualizar_parcela_dialog.py): grau de longitude "encolhe" por
+    cos(latitude) em relação a grau de latitude, então desenhar direto em
+    grau decimal distorceria a forma do polígono."""
+    transformador = pyproj.Transformer.from_crs(
+        _GEODESICA, _crs_utm(meridiano_central, hemisferio), always_xy=True
+    )
+    easting, northing = transformador.transform(longitude, latitude)
+    return easting, northing

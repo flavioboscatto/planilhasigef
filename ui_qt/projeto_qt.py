@@ -44,7 +44,18 @@ def montar_projeto(janela) -> dict:
         campos = aba.modelo().model_dump(exclude={"vertices"})
         campos["vertices"] = aba.modelo_tabela.dataframe().to_dict(orient="records")
         campos["importacoes"] = _serializar_importacoes(aba)
+        # qual sub-aba (Tabela de Perímetro/Importação N) estava aberta —
+        # sem isto, reabrir o projeto sempre pousava na última sub-aba
+        # criada (efeito colateral de _criar_aba_importacao, que muda o
+        # foco pra cada importação recriada durante o carregamento).
+        campos["subaba_atual"] = aba.subabas.currentIndex()
         parcelas.append(campos)
+
+    # índice 0 é sempre a aba Identificação — -1 pra guardar a posição
+    # relativa entre as abas de parcela (0 = Parcela 1), pelo mesmo motivo
+    # de subaba_atual acima (_adicionar_aba_parcela também rouba o foco a
+    # cada parcela recriada).
+    parcela_atual = max(0, janela.abas.currentIndex() - 1)
 
     painel = janela.painel_numeracao
     numeracao = {
@@ -59,6 +70,7 @@ def montar_projeto(janela) -> dict:
         "num_parcelas": len(abas),
         "parcelas": parcelas,
         "numeracao": numeracao,
+        "parcela_atual": parcela_atual,
     }
 
 
@@ -106,6 +118,18 @@ def aplicar_projeto(janela, dados: dict) -> None:
                 dados_importados, dados_utm_brutos,
                 importacao.get("meridiano") or 0.0, importacao.get("hemisferio") or "",
             )
+
+        # sem isto, a aba fica na última sub-aba de importação recriada
+        # acima (_criar_aba_importacao muda o foco pra cada uma) — padrão
+        # 0 = Tabela de Perímetro, mesmo numa parcela sem "subaba_atual"
+        # salva (arquivo de versão anterior a este campo existir).
+        indice_subaba = min(max(0, parcela_dados.get("subaba_atual", 0)), aba.subabas.count() - 1)
+        aba.subabas.setCurrentIndex(indice_subaba)
+
+    # mesmo motivo, um nível acima: sem isto a janela fica na última
+    # parcela recriada (_adicionar_aba_parcela muda o foco a cada uma).
+    indice_parcela = min(max(0, dados.get("parcela_atual", 0)), quantidade - 1)
+    janela.abas.setCurrentIndex(1 + indice_parcela)
 
     numeracao = dados.get("numeracao", {})
     painel = janela.painel_numeracao
