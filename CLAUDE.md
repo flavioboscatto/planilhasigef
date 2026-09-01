@@ -73,11 +73,15 @@ core/validators/geometria.py reordena_norte_horario (usado por "Reorganizar") e
                               verificar_autointersecao (V3, via shapely)
 core/geo.py                  pyproj (conversão UTM <-> Geodésica e o inverso,
                               Geodésica -> UTM, usado só pra desenhar a parcela)
+core/sgl.py                  área/distância/perímetro no Sistema Geodésico Local do
+                              INCRA (Manual Técnico de Posicionamento, cap. 9) — só
+                              `math`, sem pyproj/shapely (ver docstring do módulo)
 core/projeto.py              serialização do projeto .sigefproj (ver regra 6)
 ui_qt/vertices_table.py      grade de vértices (QTableView) — única porta de
                               entrada pra essa grade; nenhum outro módulo a redesenha
 ui_qt/visualizar_parcela_dialog.py  diálogo "Visualizar parcela" (V3): desenho
-                              nativo Qt (QGraphicsView) dos vértices + polilinha
+                              nativo Qt (QGraphicsView, zoom no scroll + pan por
+                              arraste) dos vértices + polilinha + área SGL/INCRA
 ui_qt/perimetro_tab.py       aba de uma parcela: cabeçalho + grade + sub-abas de importação
 ui_qt/importacao_tab.py      sub-aba "Importação N" persistente dentro da parcela
 ui_qt/importar_vertices_dialog.py  diálogo de importação de arquivo (TXT/CSV)
@@ -153,6 +157,26 @@ implementado o resto: existência do CNS, validade do código de
 credenciado, sobreposição com parcela certificada, unicidade posicional de
 vértice, município × malha IBGE. A interface precisa dizer isso; nunca
 sugerir ao usuário que "sem erros" equivale a "vai certificar".
+
+## Área no Sistema Geodésico Local (SGL/INCRA)
+
+`core/sgl.py` (V3) implementa área/distância/perímetro conforme o Manual
+Técnico de Posicionamento (cap. 9) — geodésicas ⇄ geocêntricas ⇄
+cartesianas locais (e, n, u), área pela fórmula de Gauss. Mostrado no
+diálogo "Visualizar parcela" (`ui_qt/visualizar_parcela_dialog.py`), só
+quando o perímetro não tem autointerseção.
+
+Desvio deliberado do Manual (item 9.2 do documento de especificação, a
+pedido do usuário): a norma manda **recusar** vértice sem altitude
+elipsoidal em vez de assumir `h=0`, mas a grade deste app não distingue
+"célula de h vazia" de "usuário digitou 0" (mesmo comportamento de toda
+coluna numérica — ver `core/tabela_vertices.py`), e parcelas litorâneas
+podem ter `h` genuinamente perto de zero. `area_sgl` calcula com o `h`
+que vier, sem bloquear por `h=0` — ver docstring do módulo.
+
+`azimute_puissant` está com `NotImplementedError` explícito de propósito:
+a especificação fornecida não trazia a fórmula fechada de Puissant, e
+azimute errado é pior que a função ausente.
 
 ## Comandos
 

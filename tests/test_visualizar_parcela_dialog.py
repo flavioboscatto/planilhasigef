@@ -1,8 +1,17 @@
 """Testes de ui_qt/visualizar_parcela_dialog.py (V3): desenha vértices +
-polilinha fechada da parcela, destacando lados que se cruzam."""
+polilinha fechada da parcela, destacando lados que se cruzam, mostra a
+área SGL/INCRA (core/sgl.py) e permite zoom (scroll) e pan (arraste)."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsTextItem
+from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QWheelEvent
+from PySide6.QtWidgets import (
+    QGraphicsEllipseItem,
+    QGraphicsItem,
+    QGraphicsLineItem,
+    QGraphicsTextItem,
+    QGraphicsView,
+)
 
 from core.models import Vertice
 from ui_qt.visualizar_parcela_dialog import VisualizarParcelaDialog, _COR_CRUZAMENTO, _COR_LADO
@@ -67,3 +76,66 @@ def test_botao_atualizar_redesenha_com_dados_novos(qtbot):
 
     assert len([i for i in dialogo.cena.items() if isinstance(i, QGraphicsEllipseItem)]) == 4
     assert "autointerseção" in dialogo.rotulo_resultado.text()
+
+
+def test_area_sgl_e_mostrada_para_poligono_simples(qtbot):
+    dialogo = VisualizarParcelaDialog(lambda: _TRIANGULO, -51.0, "Sul")
+    qtbot.addWidget(dialogo)
+
+    assert "Área" in dialogo.rotulo_area.text()
+    assert "ha" in dialogo.rotulo_area.text()
+
+
+def test_area_nao_e_calculada_quando_ha_cruzamento(qtbot):
+    dialogo = VisualizarParcelaDialog(lambda: _BORBOLETA, -51.0, "Sul")
+    qtbot.addWidget(dialogo)
+
+    assert "não calculada" in dialogo.rotulo_area.text()
+    assert "cruzam" in dialogo.rotulo_area.text()
+
+
+def test_scroll_do_mouse_da_zoom_na_visualizacao(qtbot):
+    dialogo = VisualizarParcelaDialog(lambda: _TRIANGULO, -51.0, "Sul")
+    qtbot.addWidget(dialogo)
+    escala_antes = dialogo.view.transform().m11()
+
+    evento = QWheelEvent(
+        QPointF(0, 0), QPointF(0, 0), QPoint(0, 0), QPoint(0, 120),
+        Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.NoScrollPhase, False,
+    )
+    dialogo.view.wheelEvent(evento)
+
+    assert dialogo.view.transform().m11() > escala_antes
+
+
+def test_arrastar_com_botao_esquerdo_move_o_desenho():
+    dialogo = VisualizarParcelaDialog(lambda: _TRIANGULO, -51.0, "Sul")
+
+    assert dialogo.view.dragMode() == QGraphicsView.DragMode.ScrollHandDrag
+
+
+def test_cena_tem_espaco_extra_pra_navegar_alem_do_desenho(qtbot):
+    dialogo = VisualizarParcelaDialog(lambda: _TRIANGULO, -51.0, "Sul")
+    qtbot.addWidget(dialogo)
+
+    cena_rect = dialogo.cena.sceneRect()
+    itens_rect = dialogo.cena.itemsBoundingRect()
+
+    assert cena_rect.width() > itens_rect.width()
+    assert cena_rect.height() > itens_rect.height()
+    assert cena_rect.left() < itens_rect.left()
+    assert cena_rect.top() < itens_rect.top()
+    assert cena_rect.right() > itens_rect.right()
+    assert cena_rect.bottom() > itens_rect.bottom()
+
+
+def test_rotulo_do_vertice_tem_tamanho_fixo_e_ignora_zoom(qtbot):
+    dialogo = VisualizarParcelaDialog(lambda: _TRIANGULO, -51.0, "Sul")
+    qtbot.addWidget(dialogo)
+
+    rotulos = [i for i in dialogo.cena.items() if isinstance(i, QGraphicsTextItem)]
+    assert rotulos
+    for rotulo in rotulos:
+        assert rotulo.font().pointSize() == 12
+        assert rotulo.flags() & QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations

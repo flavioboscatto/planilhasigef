@@ -4,19 +4,25 @@ matplotlib: o projeto exclui essa lib de propósito do empacotamento
 (sigef_qt.spec) e o app nunca desenhou gráfico até agora (V3, primeira
 vez).
 
+Também mostra a área da parcela pelo Sistema Geodésico Local do INCRA
+(core/sgl.py) — só quando o perímetro não tem autointerseção (reaproveita
+a mesma checagem usada pra colorir os lados problemáticos).
+
 Não-modal, mesmo molde de ui_qt/importar_vertices_dialog.py: quem abre
 guarda a referência em atributo de instância (senão o Python coleta o
 objeto e a janela some sozinha) — ver ui_qt/perimetro_tab.py::_abrir_visualizacao.
 """
 from __future__ import annotations
 
+import warnings
 from typing import Callable
 
 from PySide6.QtCore import QPointF, QRectF
-from PySide6.QtGui import QBrush, QColor, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen, QWheelEvent
 from PySide6.QtWidgets import (
     QDialog,
     QGraphicsEllipseItem,
+    QGraphicsItem,
     QGraphicsLineItem,
     QGraphicsScene,
     QGraphicsTextItem,
@@ -28,6 +34,7 @@ from PySide6.QtWidgets import (
 
 from core.geo import geodesica_para_utm
 from core.models import Vertice
+from core.sgl import area_sgl
 from core.validators.geometria import verificar_autointersecao
 
 _RAIO_PONTO = 4
@@ -37,6 +44,31 @@ _COR_PONTO = QColor("#000000")
 _MARGEM_PX = 40
 _LARGURA_CENA = 700
 _ALTURA_CENA = 600
+_FATOR_ZOOM = 1.15
+_ZOOM_MINIMO = 0.2
+_ZOOM_MAXIMO = 15.0
+_OFFSET_NAVEGACAO_M = 30.0  # pedido do usuário: espaço extra pra navegar em volta do desenho
+_TAMANHO_ROTULO_PT = 12
+
+
+class _VisualizacaoView(QGraphicsView):
+    """QGraphicsView + zoom no scroll do mouse e pan por arraste — pedido
+    do usuário: com muitos vértices próximos os nomes se embolam, então
+    precisa dar zoom e mover o desenho pra separar visualmente."""
+
+    def __init__(self, cena: QGraphicsScene) -> None:
+        super().__init__(cena)
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self._zoom = 1.0
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        fator = _FATOR_ZOOM if event.angleDelta().y() > 0 else 1 / _FATOR_ZOOM
+        novo_zoom = self._zoom * fator
+        if not (_ZOOM_MINIMO <= novo_zoom <= _ZOOM_MAXIMO):
+            return
+        self._zoom = novo_zoom
+        self.scale(fator, fator)
 
 
 class VisualizarParcelaDialog(QDialog):
@@ -60,10 +92,15 @@ class VisualizarParcelaDialog(QDialog):
         self.rotulo_resultado.setWordWrap(True)
         layout.addWidget(self.rotulo_resultado)
 
+        self.rotulo_area = QLabel()
+        self.rotulo_area.setWordWrap(True)
+        layout.addWidget(self.rotulo_area)
+
         self.cena = QGraphicsScene(0, 0, _LARGURA_CENA, _ALTURA_CENA)
-        self.view = QGraphicsView(self.cena)
+        self.view = _VisualizacaoView(self.cena)
         self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
         layout.addWidget(self.view, 1)
+        layout.addWidget(QLabel("Role o mouse pra dar zoom; arraste com o botão esquerdo pra mover o desenho."))
 
         # cobre o caso de editar a grade com este diálogo ainda aberto —
         # sem precisar fechar/reabrir pra ver o resultado atualizado.
@@ -81,6 +118,7 @@ class VisualizarParcelaDialog(QDialog):
             self.rotulo_resultado.setText(
                 "É preciso pelo menos 3 vértices com código preenchido para desenhar o perímetro."
             )
+            self.rotulo_area.setText("")
             return
 
         cruzamentos = verificar_autointersecao(vertices)
@@ -98,6 +136,24 @@ class VisualizarParcelaDialog(QDialog):
             geodesica_para_utm(v.e_long, v.n_lat, self._meridiano_central, self._hemisferio) for v in vertices
         ]
         self._desenhar_pontos(vertices, pontos_m, lados_com_problema)
+        self._atualizar_area(vertices, tem_cruzamento=bool(cruzamentos))
+
+    def _atualizar_area(self, vertices: list[Vertice], tem_cruzamento: bool) -> None:
+        if tem_cruzamento:
+            self.rotulo_area.setText("Área (SGL/INCRA) não calculada: o perímetro tem lados que se cruzam.")
+            return
+        pontos_geodesicos = [(v.n_lat, v.e_long, v.h) for v in vertices]
+        try:
+            with warnings.catch_warnings(record=True) as avisos_capturados:
+                warnings.simplefilter("always")
+                resultado = area_sgl(pontos_geodesicos)
+        except ValueError as exc:
+            self.rotulo_area.setText(f"Área (SGL/INCRA) não calculada: {exc}")
+            return
+        texto = f"Área (Sistema Geodésico Local, INCRA): {resultado['area_ha']:.4f} ha ({resultado['area_m2']:.2f} m²)"
+        if avisos_capturados:
+            texto += f"\n⚠ {avisos_capturados[0].message}"
+        self.rotulo_area.setText(texto)
 
     def _desenhar_pontos(
         self, vertices: list[Vertice], pontos_m: list[tuple[float, float]], lados_com_problema: set[int]
@@ -141,5 +197,21 @@ class VisualizarParcelaDialog(QDialog):
             self.cena.addItem(circulo)
 
             rotulo = QGraphicsTextItem(vertice.codigo)
+            fonte = rotulo.font()
+            fonte.setPointSize(_TAMANHO_ROTULO_PT)
+            rotulo.setFont(fonte)
+            # pedido do usuário: o nome do vértice fica sempre no mesmo
+            # tamanho na tela, não cresce/encolhe junto com o zoom do
+            # desenho — só a POSIÇÃO acompanha o zoom/pan, não o tamanho.
+            rotulo.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
             rotulo.setPos(ponto.x() + _RAIO_PONTO + 2, ponto.y() - 10)
             self.cena.addItem(rotulo)
+
+        # espaço extra pra navegar em volta do desenho (pedido do
+        # usuário): sem isto, a borda do retângulo envolvente fica
+        # apertada bem na ponta do polígono, sem folga pra rolar quando
+        # der zoom perto de um vértice na beirada.
+        offset_px = _OFFSET_NAVEGACAO_M * escala
+        self.cena.setSceneRect(
+            self.cena.itemsBoundingRect().adjusted(-offset_px, -offset_px, offset_px, offset_px)
+        )
