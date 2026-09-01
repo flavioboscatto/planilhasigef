@@ -1,15 +1,9 @@
 """Entrypoint da versão desktop nativo (PySide6) do Gerador de Planilha
-SIGEF — ver plano de migração (~/.claude/plans, ou peça pro Claude
-recuperar) para o roteiro completo por fases.
+SIGEF.
 
 Janela principal, menu, abas reais (Identificação + parcelas) que trocam
-sem perder estado — diferente do Streamlit, um QWidget de aba fica vivo em
-memória o tempo todo, não é recriado a cada clique. Menu Arquivo
-(Novo/Abrir/Salvar/Gerar planilha) ainda não ligado a nada de verdade
-(Fase 7/8).
-
-Constrói ao lado de app.py (Streamlit) sem tocar nele — as duas versões
-convivem até a migração terminar.
+sem perder estado — um QWidget de aba fica vivo em memória o tempo todo,
+não é recriado a cada clique.
 """
 from __future__ import annotations
 
@@ -29,18 +23,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import ods_writer
+from core import exportacao_txt, ods_writer, relatorio_docx
 from core.projeto import ProjetoInvalidoError, desserializar, serializar
 from core.template_loader import load_template
 from ui_qt.estilo_qt import FOLHA_DE_ESTILO
 from ui_qt.identificacao_tab import AbaIdentificacao
 from ui_qt.perimetro_tab import AbaPerimetro
 from ui_qt.projeto_qt import aplicar_projeto, montar_projeto
+from ui_qt.relatorio_qt import montar_dados_relatorio
 from ui_qt.renumeracao_panel import PainelNumeracao
 from ui_qt.tema_qt import carregar_tema
 
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
 ICONE_APP = Path(__file__).resolve().parent / "assets" / "icone_app.ico"
+TITULO_APP = "Planilha SIGEF por Prof. Flavio Boscatto - IFSC"
 
 
 def _carregar_json(nome_arquivo: str):
@@ -51,7 +47,7 @@ def _carregar_json(nome_arquivo: str):
 class JanelaPrincipal(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Gerador de Planilha SIGEF")
+        self.setWindowTitle(TITULO_APP)
         self.resize(1100, 800)
 
         self._proxima_parcela = 1
@@ -69,6 +65,12 @@ class JanelaPrincipal(QMainWindow):
         self.painel_numeracao = PainelNumeracao(
             self.dominios, self._abas_perimetro, self._aba_perimetro_atual, self.tema
         )
+        # os botões de exportação moram no painel (espaço compartilhado,
+        # acima das abas), mas quem sabe gerar o arquivo é a janela — tem a
+        # Identificação, o diálogo de salvar e todas as parcelas.
+        self.painel_numeracao.btn_exportar_planilha.clicked.connect(self._gerar_planilha)
+        self.painel_numeracao.btn_exportar_txt.clicked.connect(self._exportar_txt)
+        self.painel_numeracao.btn_gerar_relatorio.clicked.connect(self._gerar_relatorio)
 
         central = QWidget()
         layout_central = QVBoxLayout(central)
@@ -113,6 +115,12 @@ class JanelaPrincipal(QMainWindow):
         acao_gerar = menu_arquivo.addAction("Gerar planilha SIGEF (.ods)...")
         acao_gerar.triggered.connect(self._gerar_planilha)
 
+        acao_exportar_txt = menu_arquivo.addAction("Exportar Tabela SIGEF em TXT...")
+        acao_exportar_txt.triggered.connect(self._exportar_txt)
+
+        acao_relatorio = menu_arquivo.addAction("Gerar Relatório em DOCX...")
+        acao_relatorio.triggered.connect(self._gerar_relatorio)
+
         menu_arquivo.addSeparator()
 
         acao_sair = menu_arquivo.addAction("Sair")
@@ -136,7 +144,7 @@ class JanelaPrincipal(QMainWindow):
     def _adicionar_aba_parcela(self) -> None:
         indice = self._proxima_parcela
         self._proxima_parcela += 1
-        aba = AbaPerimetro(indice, self.dominios, self.tema)
+        aba = AbaPerimetro(indice, self.dominios, self.tema, self.painel_numeracao)
         self.abas.addTab(aba, f"Parcela {indice}")
         self.abas.setCurrentWidget(aba)
 
@@ -174,9 +182,46 @@ class JanelaPrincipal(QMainWindow):
             f"Planilha gerada ({len(saida)} bytes) em {caminho}.\nConfira no LibreOffice com F3.",
         )
 
+    def _exportar_txt(self) -> None:
+        perimetros = [aba.modelo() for aba in self._abas_perimetro()]
+        saida = exportacao_txt.gerar_txt(perimetros, self.dominios["limites_coordenadas"])
+
+        caminho, _ = QFileDialog.getSaveFileName(
+            self, "Exportar Tabela SIGEF em TXT", "tabela_sigef.txt", "Texto (*.txt);;Todos os arquivos (*.*)"
+        )
+        if not caminho:
+            return
+        try:
+            Path(caminho).write_text(saida, encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.critical(self, "Exportar TXT", f"Não consegui salvar em {caminho}: {exc}")
+            return
+        QMessageBox.information(self, "Exportar TXT", f"Tabela exportada em {caminho}.")
+
+    def _gerar_relatorio(self) -> None:
+        identificacao = self.aba_identificacao.modelo()
+        parcelas = montar_dados_relatorio(self)
+        try:
+            saida = relatorio_docx.gerar_relatorio(identificacao, parcelas, self.dominios["limites_coordenadas"])
+        except Exception as exc:  # noqa: BLE001 — qualquer falha de geração vira mensagem, não crash
+            QMessageBox.critical(self, "Gerar relatório", f"Não consegui gerar o relatório: {exc}")
+            return
+
+        caminho, _ = QFileDialog.getSaveFileName(
+            self, "Salvar relatório", "relatorio_sigef.docx", "Documento Word (*.docx);;Todos os arquivos (*.*)"
+        )
+        if not caminho:
+            return
+        try:
+            Path(caminho).write_bytes(saida)
+        except OSError as exc:
+            QMessageBox.critical(self, "Gerar relatório", f"Não consegui salvar em {caminho}: {exc}")
+            return
+        QMessageBox.information(self, "Gerar relatório", f"Relatório gerado em {caminho}.")
+
     def _atualizar_titulo(self) -> None:
         nome = Path(self.caminho_projeto).name if self.caminho_projeto else "sem arquivo salvo"
-        self.setWindowTitle(f"Gerador de Planilha SIGEF — {nome}")
+        self.setWindowTitle(f"{TITULO_APP} — {nome}")
 
     def _novo_projeto(self) -> None:
         resposta = QMessageBox.question(

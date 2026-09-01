@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.numeracao import atualizar_tipos_parcelas, renumerar_parcelas
-from ui_qt.tema_qt import botao_verde
+from ui_qt.tema_qt import botao_marrom, botao_verde
 
 _FORMATOS_NUMERO = ["1", "01", "001", "0001", "00001"]
 
@@ -98,25 +98,39 @@ class PainelNumeracao(QWidget):
             botao.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             return botao
 
-        layout_botoes = QVBoxLayout()
-        layout_botoes.setSpacing(4)
+        def _botao_exportar(texto: str) -> QPushButton:
+            botao = botao_marrom(texto, tema)
+            botao.setMinimumWidth(190)
+            botao.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            return botao
 
-        linha_botoes_1 = QHBoxLayout()
-        btn_renumerar = _botao_bloco("Renumerar vértices marcados")
-        btn_renumerar.setToolTip(
-            'Só linhas com "Renumerar?" marcado recebem código novo, em todas '
-            "as parcelas abertas — desmarque vértices que não são seus."
-        )
-        btn_renumerar.clicked.connect(self._renumerar)
-        linha_botoes_1.addWidget(btn_renumerar)
+        layout_botoes_direita = QVBoxLayout()
+        layout_botoes_direita.setSpacing(4)
 
-        btn_atualizar = _botao_bloco("🔄 Atualizar código (só o Tipo)")
-        btn_atualizar.setToolTip(
-            "Já renumerou e corrigiu o Tipo de algum vértice na grade? Isto "
-            "reescreve só o pedaço do Tipo no código, sem reatribuir número."
-        )
-        btn_atualizar.clicked.connect(self._atualizar_tipos)
-        linha_botoes_1.addWidget(btn_atualizar)
+        # Exportações em marrom (sai um arquivo), sempre em cima —
+        # separadas visualmente das ações verdes (mexem só no que está na
+        # tela) de baixo. Quem conecta os cliques é o dono da janela
+        # (app_qt.py: tem a Identificação, o diálogo de salvar e as demais
+        # parcelas, que este painel não enxerga sozinho).
+        linha_exportar = QHBoxLayout()
+        self.btn_exportar_planilha = _botao_exportar("Exportar planilha SIGEF (.ods)")
+        self.btn_exportar_txt = _botao_exportar("Exportar Tabela SIGEF em TXT")
+        self.btn_gerar_relatorio = _botao_exportar("Gerar Relatório em DOCX")
+        linha_exportar.addWidget(self.btn_exportar_planilha)
+        linha_exportar.addWidget(self.btn_exportar_txt)
+        linha_exportar.addWidget(self.btn_gerar_relatorio)
+        layout_botoes_direita.addLayout(linha_exportar)
+
+        # Renumerar/Atualizar/Marcar/Desmarcar desceram pra junto da grade
+        # que eles afetam (ui_qt/perimetro_tab.py), a pedido do usuário —
+        # aqui ficam só as ações que não têm "dono" de uma parcela só:
+        # Reorganizar/Desfazer continuam agindo na aba ATUAL, e Importar
+        # ocupa o espaço que sobrou.
+        linha_botoes = QHBoxLayout()
+        btn_reorganizar = _botao_bloco("↻ Reorganizar")
+        btn_reorganizar.setToolTip("Reorganiza a grade da parcela aberta agora (mais ao norte, sentido horário).")
+        btn_reorganizar.clicked.connect(self._reorganizar_atual)
+        linha_botoes.addWidget(btn_reorganizar)
 
         btn_desfazer = _botao_bloco("↶ Desfazer (Ctrl+Z)")
         btn_desfazer.setToolTip(
@@ -124,31 +138,15 @@ class PainelNumeracao(QWidget):
             "última mudança — edição de célula, colar, Reorganizar etc."
         )
         btn_desfazer.clicked.connect(self._desfazer_atual)
-        linha_botoes_1.addWidget(btn_desfazer)
-        layout_botoes.addLayout(linha_botoes_1)
+        linha_botoes.addWidget(btn_desfazer)
 
-        # Reorganizar/Marcar/Desmarcar agem só na aba de Parcela ATUAL;
-        # Renumerar/Atualizar (linha de cima) correm entre TODAS as
-        # parcelas — ficam juntos aqui porque é assim que o profissional
-        # pediu pra usar, mesmo tendo escopo diferente por baixo.
-        linha_botoes_2 = QHBoxLayout()
-        btn_reorganizar = _botao_bloco("↻ Reorganizar")
-        btn_reorganizar.setToolTip("Reorganiza a grade da parcela aberta agora (mais ao norte, sentido horário).")
-        btn_reorganizar.clicked.connect(self._reorganizar_atual)
-        linha_botoes_2.addWidget(btn_reorganizar)
+        btn_importar = _botao_bloco("Importar vértices de um arquivo (TXT/CSV)...")
+        btn_importar.setToolTip("Importa vértices de um arquivo para a parcela aberta agora.")
+        btn_importar.clicked.connect(self._importar_atual)
+        linha_botoes.addWidget(btn_importar)
+        layout_botoes_direita.addLayout(linha_botoes)
 
-        btn_marcar = _botao_bloco("☑ Marcar todos")
-        btn_marcar.setToolTip('Marca "Renumerar?" em toda a grade da parcela aberta agora.')
-        btn_marcar.clicked.connect(lambda: self._definir_renumerar_atual(True))
-        linha_botoes_2.addWidget(btn_marcar)
-
-        btn_desmarcar = _botao_bloco("☐ Desmarcar todos")
-        btn_desmarcar.setToolTip('Desmarca "Renumerar?" em toda a grade da parcela aberta agora.')
-        btn_desmarcar.clicked.connect(lambda: self._definir_renumerar_atual(False))
-        linha_botoes_2.addWidget(btn_desmarcar)
-        layout_botoes.addLayout(linha_botoes_2)
-
-        linha.addLayout(layout_botoes, 1)
+        linha.addLayout(layout_botoes_direita, 1)
 
     def _rotulo_pequeno(self, texto: str) -> QLabel:
         etiqueta = QLabel(texto)
@@ -182,10 +180,10 @@ class PainelNumeracao(QWidget):
         if aba is not None:
             aba._reorganizar()
 
-    def _definir_renumerar_atual(self, valor: bool) -> None:
+    def _importar_atual(self) -> None:
         aba = self._exigir_aba_atual()
         if aba is not None:
-            aba.modelo_tabela.definir_coluna("renumerar", valor)
+            aba._abrir_importador()
 
     def _desfazer_atual(self) -> None:
         aba = self._exigir_aba_atual()

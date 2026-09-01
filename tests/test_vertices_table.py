@@ -44,8 +44,9 @@ def test_grade_comeca_com_tres_linhas_e_renumerar_marcado(qtbot):
     modelo = view.model()
 
     assert modelo.rowCount() == 3
+    col_renumerar = modelo.dataframe().columns.get_loc("renumerar")
     for linha in range(3):
-        indice = modelo.index(linha, 0)
+        indice = modelo.index(linha, col_renumerar)
         assert modelo.data(indice, Qt.ItemDataRole.CheckStateRole) == Qt.CheckState.Checked
 
 
@@ -53,7 +54,7 @@ def test_desmarcar_checkbox_renumerar_sempre_pega(qtbot):
     view = _nova_view()
     qtbot.addWidget(view)
     modelo = view.model()
-    indice = modelo.index(0, 0)
+    indice = modelo.index(0, modelo.dataframe().columns.get_loc("renumerar"))
 
     modelo.setData(indice, Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
 
@@ -251,9 +252,10 @@ def test_mover_linha_para_cima_troca_com_a_vizinha_de_cima(qtbot):
     view = _nova_view()
     qtbot.addWidget(view)
     modelo = view.model()
-    modelo.setData(modelo.index(0, 2), "A", 2)
-    modelo.setData(modelo.index(1, 2), "B", 2)
-    modelo.setData(modelo.index(2, 2), "C", 2)
+    col_codigo = modelo.dataframe().columns.get_loc("codigo")
+    modelo.setData(modelo.index(0, col_codigo), "A", 2)
+    modelo.setData(modelo.index(1, col_codigo), "B", 2)
+    modelo.setData(modelo.index(2, col_codigo), "C", 2)
 
     nova_pos = modelo.mover_linha(1, -1)
 
@@ -265,9 +267,10 @@ def test_mover_linha_para_baixo_troca_com_a_vizinha_de_baixo(qtbot):
     view = _nova_view()
     qtbot.addWidget(view)
     modelo = view.model()
-    modelo.setData(modelo.index(0, 2), "A", 2)
-    modelo.setData(modelo.index(1, 2), "B", 2)
-    modelo.setData(modelo.index(2, 2), "C", 2)
+    col_codigo = modelo.dataframe().columns.get_loc("codigo")
+    modelo.setData(modelo.index(0, col_codigo), "A", 2)
+    modelo.setData(modelo.index(1, col_codigo), "B", 2)
+    modelo.setData(modelo.index(2, col_codigo), "C", 2)
 
     nova_pos = modelo.mover_linha(1, 1)
 
@@ -279,7 +282,7 @@ def test_mover_linha_na_ponta_nao_faz_nada(qtbot):
     view = _nova_view()
     qtbot.addWidget(view)
     modelo = view.model()
-    modelo.setData(modelo.index(0, 2), "A", 2)
+    modelo.setData(modelo.index(0, modelo.dataframe().columns.get_loc("codigo")), "A", 2)
 
     assert modelo.mover_linha(0, -1) is None
     assert modelo.mover_linha(2, 1) is None

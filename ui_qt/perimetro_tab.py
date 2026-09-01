@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
+    QSizePolicy,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -61,11 +63,19 @@ def _form(rotulo: str, campo: QWidget) -> QVBoxLayout:
 
 
 class AbaPerimetro(QWidget):
-    def __init__(self, indice: int, dominios: dict, tema: dict[str, Papel]) -> None:
+    def __init__(
+        self, indice: int, dominios: dict, tema: dict[str, Papel], painel_numeracao=None
+    ) -> None:
         super().__init__()
         self.indice = indice
         self._dominios = dominios
         self._tema = tema
+        # Renumerar/Atualizar código continuam contando entre TODAS as
+        # parcelas (core/numeracao.py) — os campos de Credenciado/Formato/
+        # Próximo nº moram só no painel compartilhado (ui_qt/
+        # renumeracao_panel.py), então o botão daqui só delega pra lá, não
+        # duplica estado por parcela.
+        self._painel_numeracao = painel_numeracao
         self._proxima_importacao = 1
         self._dialogo_importacao: ImportarVerticesDialog | None = None
 
@@ -96,10 +106,6 @@ class AbaPerimetro(QWidget):
         linha_cabecalho.addLayout(_form("Meridiano Central (°)", self.meridiano_central))
         linha_cabecalho.addLayout(_form("Hemisfério", self.hemisferio))
         layout.addLayout(linha_cabecalho)
-
-        btn_importar = botao_verde("Importar vértices de um arquivo (TXT/CSV)...", tema)
-        btn_importar.clicked.connect(self._abrir_importador)
-        layout.addWidget(btn_importar)
 
         layout.addWidget(
             QLabel(
@@ -146,11 +152,46 @@ class AbaPerimetro(QWidget):
         self.grade = TabelaVerticesView(self.modelo_tabela)
         layout_aba_tabela.addWidget(self.grade)
 
+        def _botao_grade(texto: str) -> QPushButton:
+            botao = botao_verde(texto, tema)
+            botao.setMinimumWidth(150)
+            botao.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            return botao
+
+        # 8 botões em 2 fileiras de 4: Marcar/Desmarcar/Atualizar/Renumerar
+        # (vieram do painel de Numeração pra cá, a pedido do usuário — ficam
+        # junto da grade que eles afetam) em cima de Adicionar/Remover/
+        # Subir/Descer, que já moravam aqui.
+        barra_numeracao = QHBoxLayout()
+        btn_marcar = _botao_grade("☑ Marcar todos")
+        btn_marcar.setToolTip('Marca "Renumerar?" em toda a grade desta parcela.')
+        btn_marcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", True))
+        btn_desmarcar = _botao_grade("☐ Desmarcar todos")
+        btn_desmarcar.setToolTip('Desmarca "Renumerar?" em toda a grade desta parcela.')
+        btn_desmarcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", False))
+        btn_atualizar = _botao_grade("🔄 Atualizar código (só o Tipo)")
+        btn_atualizar.setToolTip(
+            "Já renumerou e corrigiu o Tipo de algum vértice na grade? Isto "
+            "reescreve só o pedaço do Tipo no código, sem reatribuir número."
+        )
+        btn_atualizar.clicked.connect(self._atualizar_tipos)
+        btn_renumerar = _botao_grade("Renumerar vértices marcados")
+        btn_renumerar.setToolTip(
+            'Só linhas com "Renumerar?" marcado recebem código novo, em todas '
+            "as parcelas abertas — desmarque vértices que não são seus."
+        )
+        btn_renumerar.clicked.connect(self._renumerar)
+        barra_numeracao.addWidget(btn_marcar)
+        barra_numeracao.addWidget(btn_desmarcar)
+        barra_numeracao.addWidget(btn_atualizar)
+        barra_numeracao.addWidget(btn_renumerar)
+        layout_aba_tabela.addLayout(barra_numeracao)
+
         barra_linhas = QHBoxLayout()
-        btn_add_linha = botao_verde("+ Adicionar vértice", tema)
-        btn_remove_linha = botao_verde("- Remover vértice(s) selecionado(s)", tema)
-        btn_subir_linha = botao_verde("↑ Subir linha selecionada", tema)
-        btn_descer_linha = botao_verde("↓ Descer linha selecionada", tema)
+        btn_add_linha = _botao_grade("+ Adicionar vértice")
+        btn_remove_linha = _botao_grade("- Remover vértice(s) selecionado(s)")
+        btn_subir_linha = _botao_grade("↑ Subir linha selecionada")
+        btn_descer_linha = _botao_grade("↓ Descer linha selecionada")
         btn_add_linha.clicked.connect(lambda: self.modelo_tabela.inserir_linha())
         btn_remove_linha.clicked.connect(self._remover_linhas_selecionadas)
         btn_subir_linha.clicked.connect(lambda: self._mover_linha_selecionada(-1))
@@ -195,6 +236,14 @@ class AbaPerimetro(QWidget):
         self.grade.selectionModel().select(
             QItemSelection(linha_esq, linha_dir), QItemSelectionModel.SelectionFlag.ClearAndSelect
         )
+
+    def _renumerar(self) -> None:
+        if self._painel_numeracao is not None:
+            self._painel_numeracao._renumerar()
+
+    def _atualizar_tipos(self) -> None:
+        if self._painel_numeracao is not None:
+            self._painel_numeracao._atualizar_tipos()
 
     def _reorganizar(self) -> None:
         df = self.modelo_tabela.dataframe()

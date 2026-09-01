@@ -37,7 +37,8 @@ _COLUNAS_COORDENADA = {"e_long": ("E", "W"), "n_lat": ("N", "S")}
 _COLUNAS_SIGMA = {"sigma_long", "sigma_lat", "sigma_h"}
 
 _ROTULOS = {
-    "renumerar": "Renumerar?",
+    "pt_original": "Pt.Original",
+    "renumerar": "Renum.",
     "tipo_vertice": "Tipo",
     "codigo": "Vértice",
     "e_long": "E/Long",
@@ -347,6 +348,7 @@ class TabelaVerticesView(QTableView):
         # rolagem horizontal (padrão do QTableView) cobre o resto.
         self.horizontalHeader().setStretchLastSection(False)
         self.setColumnWidth(COLUNAS_VERTICE.index("descritivo"), 270)
+        self.setColumnWidth(COLUNAS_VERTICE.index("pt_original"), 90)
 
         self._colunas_combo = {COLUNAS_VERTICE.index(c) for c in _COLUNAS_COMBO}
         # sem largura própria, "Tipo" (coluna estreita, cabeçalho curto)

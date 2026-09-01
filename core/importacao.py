@@ -10,6 +10,13 @@ não existe na tabela vira linha nova — sem limite de quantidade: o
 gravador (core/ods_writer.py) insere linha na planilha final conforme
 precisar, então a importação nunca precisa descartar vértice por falta de
 espaço.
+
+Casamento por "Pt.Original" antes de por "codigo": depois que o
+profissional renumera (core/numeracao.py), "codigo" vira CREDENCIADO-TIPO-
+NNN e não bate mais com o nome do arquivo importado — sem isto, reimportar
+(recalcular geodésica de novo, por exemplo) criava linha duplicada em vez
+de atualizar a já renumerada. "Pt.Original" nunca muda depois de gravado
+(ver core/tabela_vertices.py), então continua sendo a chave estável.
 """
 from __future__ import annotations
 
@@ -24,6 +31,9 @@ def mesclar_por_codigo(
     avisos: list[str] = []
     tabela = tabela_atual.copy()
     tabela["codigo"] = tabela["codigo"].astype(str)
+    tem_pt_original = "pt_original" in tabela.columns
+    if tem_pt_original:
+        tabela["pt_original"] = tabela["pt_original"].astype(str)
     # linha sem código é vaga vazia (grade nova, sem vértice de verdade —
     # mesmo critério de _preenchido em ui/aba_perimetro.py), não vértice de
     # verdade ocupando espaço: a importação reaproveita essas vagas antes
@@ -35,7 +45,11 @@ def mesclar_por_codigo(
         codigo = str(linha_nova.get("codigo", "")).strip()
         if not codigo:
             continue
-        indices_existentes = tabela.index[tabela["codigo"] == codigo].tolist()
+        indices_existentes = []
+        if tem_pt_original:
+            indices_existentes = tabela.index[tabela["pt_original"] == codigo].tolist()
+        if not indices_existentes:
+            indices_existentes = tabela.index[tabela["codigo"] == codigo].tolist()
         if indices_existentes:
             idx = indices_existentes[0]
             for campo, valor in linha_nova.items():
@@ -50,6 +64,8 @@ def mesclar_por_codigo(
                 if str(valor).strip() == "":
                     continue
                 tabela.loc[idx, campo] = valor
+            if tem_pt_original:
+                tabela.loc[idx, "pt_original"] = codigo
         else:
             # "renumerar" nasce desmarcado pra vértice vindo de arquivo: pode
             # ser um vértice de outro credenciado, que a ferramenta de
@@ -60,6 +76,8 @@ def mesclar_por_codigo(
             nova_linha.update(
                 {k: v for k, v in linha_nova.items() if str(v).strip() != ""}
             )
+            if tem_pt_original:
+                nova_linha["pt_original"] = codigo
             novas_linhas.append(nova_linha)
 
     if novas_linhas:

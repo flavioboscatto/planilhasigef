@@ -94,11 +94,16 @@ def aplicar_projeto(janela, dados: dict) -> None:
         aba.modelo_tabela.substituir(tabela)
 
         for importacao in parcela_dados.get("importacoes", []):
-            dados = pd.DataFrame(importacao.get("linhas", []), columns=importacao.get("colunas", []))
+            # nome diferente do parâmetro "dados" da função de propósito: um
+            # DataFrame também tem `.get()` (procura coluna, não chave) —
+            # sobrescrever "dados" aqui fazia `dados.get("numeracao", {})",
+            # já perto do fim da função, devolver "{}" sempre em silêncio
+            # (nunca um erro) sempre que alguma parcela tivesse importação.
+            dados_importados = pd.DataFrame(importacao.get("linhas", []), columns=importacao.get("colunas", []))
             utm_brutos = importacao.get("dados_utm_brutos")
             dados_utm_brutos = pd.DataFrame(utm_brutos, columns=["e_long", "n_lat"]) if utm_brutos else None
             aba._criar_aba_importacao(
-                dados, dados_utm_brutos,
+                dados_importados, dados_utm_brutos,
                 importacao.get("meridiano") or 0.0, importacao.get("hemisferio") or "",
             )
 

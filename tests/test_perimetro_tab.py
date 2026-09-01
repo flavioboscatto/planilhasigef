@@ -93,6 +93,28 @@ def test_marcar_e_desmarcar_todos(qtbot):
     aba.modelo_tabela.definir_coluna("renumerar", False)
     assert not any(aba.modelo_tabela.dataframe()["renumerar"])
 
+
+def test_renumerar_e_atualizar_delegam_para_o_painel_numeracao(qtbot):
+    # os botões vieram morar aqui (ao lado da grade), mas a lógica e o
+    # estado (Credenciado/Formato/Próximo nº) continuam no painel
+    # compartilhado — precisa continuar entre todas as parcelas.
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    chamadas = []
+
+    class _PainelFalso:
+        def _renumerar(self):
+            chamadas.append("renumerar")
+
+        def _atualizar_tipos(self):
+            chamadas.append("atualizar")
+
+    aba._painel_numeracao = _PainelFalso()
+    aba._renumerar()
+    aba._atualizar_tipos()
+
+    assert chamadas == ["renumerar", "atualizar"]
+
     aba.modelo_tabela.definir_coluna("renumerar", True)
     assert all(aba.modelo_tabela.dataframe()["renumerar"])
 
@@ -100,8 +122,9 @@ def test_marcar_e_desmarcar_todos(qtbot):
 def test_subir_linha_selecionada_troca_com_a_vizinha_de_cima(qtbot):
     aba = _nova_aba()
     qtbot.addWidget(aba)
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, 2), "A", 2)
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(1, 2), "B", 2)
+    col_codigo = aba.modelo_tabela.dataframe().columns.get_loc("codigo")
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "A", 2)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(1, col_codigo), "B", 2)
     aba.grade.selectRow(1)
 
     aba._mover_linha_selecionada(-1)
@@ -113,8 +136,9 @@ def test_subir_linha_selecionada_troca_com_a_vizinha_de_cima(qtbot):
 def test_descer_linha_selecionada_troca_com_a_vizinha_de_baixo(qtbot):
     aba = _nova_aba()
     qtbot.addWidget(aba)
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, 2), "A", 2)
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(1, 2), "B", 2)
+    col_codigo = aba.modelo_tabela.dataframe().columns.get_loc("codigo")
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "A", 2)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(1, col_codigo), "B", 2)
     aba.grade.selectRow(0)
 
     aba._mover_linha_selecionada(1)
@@ -129,8 +153,9 @@ def test_mover_linha_sem_selecao_unica_avisa_e_nao_altera(qtbot, monkeypatch):
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: avisos.append(a))
     aba = _nova_aba()
     qtbot.addWidget(aba)
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, 2), "A", 2)
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(1, 2), "B", 2)
+    col_codigo = aba.modelo_tabela.dataframe().columns.get_loc("codigo")
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "A", 2)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(1, col_codigo), "B", 2)
     # nada selecionado
 
     aba._mover_linha_selecionada(-1)
@@ -159,7 +184,8 @@ def test_reorganizar_exige_pelo_menos_tres_vertices(qtbot, monkeypatch):
 
     aba = _nova_aba()
     qtbot.addWidget(aba)
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, 2), "A-1", 2)  # Qt.EditRole == 2
+    col_codigo = aba.modelo_tabela.dataframe().columns.get_loc("codigo")
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "A-1", 2)  # Qt.EditRole == 2
 
     aba._reorganizar()  # não deve lançar exceção, só avisar
 
@@ -293,7 +319,8 @@ def test_modelo_le_cabecalho_e_vertices_preenchidos(qtbot):
     qtbot.addWidget(aba)
     aba.denominacao.setText("Fazenda Teste")
     aba.hemisferio.setCurrentText("Norte")
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, 2), "AJ4-M-001", 2)
+    col_codigo = aba.modelo_tabela.dataframe().columns.get_loc("codigo")
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "AJ4-M-001", 2)
 
     perimetro = aba.modelo()
 

@@ -23,9 +23,10 @@ def test_gerar_planilha_produz_ods_valido_no_caminho_escolhido(qtbot, tmp_path, 
     janela.aba_identificacao.nome.setText("Fulano de Tal")
     janela.aba_identificacao.cpf_cnpj.setText("123.456.789-00")
     aba = janela._abas_perimetro()[0]
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, 2), "AJ4-M-001", Qt.ItemDataRole.EditRole)
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, 3), "-48,50", Qt.ItemDataRole.EditRole)
-    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, 5), "-27,50", Qt.ItemDataRole.EditRole)
+    colunas = aba.modelo_tabela.dataframe().columns
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, colunas.get_loc("codigo")), "AJ4-M-001", Qt.ItemDataRole.EditRole)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, colunas.get_loc("e_long")), "-48,50", Qt.ItemDataRole.EditRole)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, colunas.get_loc("n_lat")), "-27,50", Qt.ItemDataRole.EditRole)
 
     caminho = tmp_path / "saida.ods"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(caminho), "")))

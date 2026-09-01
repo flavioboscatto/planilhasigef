@@ -12,6 +12,12 @@ from core.models import Vertice
 from core.parsing import ValorInvalidoError, normaliza_decimal, parse_coordenada, parse_numero
 
 COLUNAS_VERTICE = [
+    # nome do ponto tal como veio da importação (ou digitado à mão) — a
+    # renumeração só reescreve "codigo", nunca esta coluna, pra o
+    # profissional sempre conseguir achar de novo qual vértice é qual
+    # depois de renumerado. Não é campo de Vertice (core/models.py): é
+    # ajuda de tela, como "renumerar", nunca vai pro ODS.
+    "pt_original",
     "renumerar",
     "tipo_vertice",
     "codigo",

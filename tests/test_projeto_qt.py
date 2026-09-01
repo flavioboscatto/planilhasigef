@@ -21,7 +21,8 @@ def test_round_trip_identificacao_e_parcelas(qtbot):
     janela._adicionar_aba_parcela()
     abas = janela._abas_perimetro()
     abas[0].denominacao.setText("Parte Um")
-    abas[0].modelo_tabela.setData(abas[0].modelo_tabela.index(0, 2), "AJ4-M-001", Qt.ItemDataRole.EditRole)
+    col_codigo = abas[0].modelo_tabela.dataframe().columns.get_loc("codigo")
+    abas[0].modelo_tabela.setData(abas[0].modelo_tabela.index(0, col_codigo), "AJ4-M-001", Qt.ItemDataRole.EditRole)
     abas[1].denominacao.setText("Parte Dois")
     abas[1].meridiano_central.setCurrentText("-45")
 
@@ -39,6 +40,29 @@ def test_round_trip_identificacao_e_parcelas(qtbot):
     assert novas_abas[0].modelo_tabela.dataframe().at[0, "codigo"] == "AJ4-M-001"
     assert novas_abas[1].denominacao.text() == "Parte Dois"
     assert novas_abas[1].meridiano_central.currentText() == "-45"
+
+
+def test_round_trip_preserva_pt_original(qtbot):
+    # Pt.Original precisa sobreviver a fechar/reabrir o projeto, senão a
+    # renumeração perde a referência pro nome do ponto importado assim que
+    # o profissional salva e volta a trabalhar noutro dia.
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    aba = janela._abas_perimetro()[0]
+    col_pt_original = aba.modelo_tabela.dataframe().columns.get_loc("pt_original")
+    col_codigo = aba.modelo_tabela.dataframe().columns.get_loc("codigo")
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_pt_original), "V1", Qt.ItemDataRole.EditRole)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "AJ4-M-001", Qt.ItemDataRole.EditRole)
+
+    dados = desserializar(serializar(montar_projeto(janela)))
+
+    nova = JanelaPrincipal()
+    qtbot.addWidget(nova)
+    aplicar_projeto(nova, dados)
+
+    nova_aba = nova._abas_perimetro()[0]
+    assert nova_aba.modelo_tabela.dataframe().at[0, "pt_original"] == "V1"
+    assert nova_aba.modelo_tabela.dataframe().at[0, "codigo"] == "AJ4-M-001"
 
 
 def test_round_trip_preserva_abas_de_importacao(qtbot):
@@ -95,6 +119,33 @@ def test_round_trip_preserva_numeracao(qtbot):
     assert nova.painel_numeracao.campo_credenciado.text() == "AJQ"
     assert nova.painel_numeracao.combo_formato.currentText() == "0001"
     assert nova.painel_numeracao._campos_numero["M"].text() == "0007"
+
+
+def test_round_trip_preserva_numeracao_mesmo_com_importacao_na_parcela(qtbot):
+    # bug relatado pelo usuário: o loop que recria as sub-abas de
+    # importação reaproveitava o nome "dados" (parâmetro da função
+    # inteira) pra cada DataFrame — como DataFrame também tem `.get()`,
+    # `dados.get("numeracao", {})` mais adiante nunca dava erro, só
+    # devolvia sempre vazio, e só quando existia importação em alguma
+    # parcela (por isso o round trip "puro", sem importação, não pegava).
+    import pandas as pd
+
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    janela.painel_numeracao.campo_credenciado.setText("FBFB")
+    janela.painel_numeracao._campos_numero["M"].setText("211")
+    aba = janela._abas_perimetro()[0]
+    dados_importados = pd.DataFrame({"codigo": ["6"], "e_long": ["-48,50"], "n_lat": ["-27,50"]})
+    aba._criar_aba_importacao(dados_importados, None, -51.0, "Sul")
+
+    dados = desserializar(serializar(montar_projeto(janela)))
+
+    nova = JanelaPrincipal()
+    qtbot.addWidget(nova)
+    aplicar_projeto(nova, dados)
+
+    assert nova.painel_numeracao.campo_credenciado.text() == "FBFB"
+    assert nova.painel_numeracao._campos_numero["M"].text() == "211"
 
 
 def test_salvar_como_grava_arquivo_e_salvar_reescreve_no_mesmo(qtbot, tmp_path, monkeypatch):

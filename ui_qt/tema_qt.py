@@ -81,3 +81,20 @@ def botao_verde(texto: str, tema: dict[str, Papel]) -> QPushButton:
         f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
     )
     return botao
+
+
+def botao_marrom(texto: str, tema: dict[str, Papel]) -> QPushButton:
+    """Botão de exportação (planilha/TXT/relatório) no mesmo marrom escuro
+    de "servico_titulo" — a faixa "Identificação do Serviço de
+    Georreferenciamento" na aba Identificação, pedido explícito do usuário
+    como referência de cor — texto branco (fundo escuro), pra separar
+    visualmente exportação (sai um arquivo) de ação normal (botao_verde,
+    mexe só no que está na tela)."""
+    cor = tema["servico_titulo"].fundo
+    botao = QPushButton(texto)
+    botao.setStyleSheet(
+        f"QPushButton {{ background: {cor.name()}; color: white; border: 1px solid {cor.darker(140).name()}; }}"
+        f"QPushButton:hover {{ background: {cor.lighter(115).name()}; }}"
+        f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
+    )
+    return botao
