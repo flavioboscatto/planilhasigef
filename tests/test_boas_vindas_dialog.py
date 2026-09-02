@@ -55,7 +55,7 @@ def test_escolher_abrir_cancelado_nao_aceita_o_dialogo(qtbot, monkeypatch):
     assert not dialogo.result()
 
 
-def test_duplo_clique_num_recente_abre_direto(qtbot, tmp_path):
+def test_clicar_num_recente_abre_direto(qtbot, tmp_path):
     caminho = tmp_path / "projeto.sigefproj"
     caminho.write_bytes(b"")
     dialogo = BoasVindasDialog([str(caminho)])
@@ -67,10 +67,27 @@ def test_duplo_clique_num_recente_abre_direto(qtbot, tmp_path):
     assert dialogo.resultado() == ("abrir", str(caminho))
 
 
-def test_duplo_clique_em_recente_que_nao_existe_mais_nao_aceita(qtbot):
+def test_clicar_em_recente_que_nao_existe_mais_nao_aceita(qtbot):
     dialogo = BoasVindasDialog(["C:/nao_existe_mais.sigefproj"])
     qtbot.addWidget(dialogo)
 
     dialogo._abrir_recente(dialogo.lista_recentes.item(0))
 
     assert not dialogo.result()
+
+
+def test_um_unico_clique_na_lista_ja_dispara_abrir_o_recente(qtbot, tmp_path):
+    # bug relatado: só um duplo-clique abria o projeto, mas isso não é
+    # óbvio numa lista de "recentes" (diferente de uma lista de arquivos do
+    # Explorer) — o usuário clicava uma vez, nada acontecia, e concluía que
+    # precisava escolher o arquivo de novo pelo "Abrir projeto...". Um
+    # único clique tem que bastar, como em Word/VS Code.
+    caminho = tmp_path / "projeto.sigefproj"
+    caminho.write_bytes(b"")
+    dialogo = BoasVindasDialog([str(caminho)])
+    qtbot.addWidget(dialogo)
+
+    dialogo.lista_recentes.itemClicked.emit(dialogo.lista_recentes.item(0))
+
+    assert dialogo.result()
+    assert dialogo.resultado() == ("abrir", str(caminho))

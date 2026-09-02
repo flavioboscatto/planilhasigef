@@ -195,25 +195,30 @@ class JanelaPrincipal(QMainWindow):
 
     def _menu_contexto_aba(self, pos) -> None:
         indice = self.abas.tabBar().tabAt(pos)
-        if indice <= 0:  # 0 = Identificação, sem menu de contexto
+        if indice <= 0:  # 0 = Identificação (ou fora de qualquer aba), sem menu
             return
         menu = QMenu(self)
         acao_renomear = menu.addAction("Renomear parcela...")
+        # ligado direto ao "triggered" de cada ação — não ao valor de
+        # retorno de menu.exec() — pra não depender de comparar QAction por
+        # identidade (e pra dar pra testar isto de verdade: um teste pode
+        # disparar `acao.trigger()` sem precisar fechar o menu modal).
+        acao_renomear.triggered.connect(lambda: self._renomear_parcela(indice))
         acao_remover = menu.addAction("Remover esta parcela...")
-        escolha = menu.exec(self.abas.tabBar().mapToGlobal(pos))
-        if escolha == acao_renomear:
-            self._renomear_parcela(indice)
-        elif escolha == acao_remover:
-            if self.abas.count() <= 2:
-                QMessageBox.warning(self, "Remover parcela", "Pelo menos uma parcela precisa continuar existindo.")
-                return
-            self._remover_parcelas([indice])
+        acao_remover.triggered.connect(lambda: self._remover_parcela_unica(indice))
+        menu.exec(self.abas.tabBar().mapToGlobal(pos))
 
     def _renomear_parcela(self, indice: int) -> None:
         atual = self.abas.tabText(indice)
         nome, ok = QInputDialog.getText(self, "Renomear parcela", "Novo nome:", text=atual)
         if ok and nome.strip():
             self.abas.setTabText(indice, nome.strip())
+
+    def _remover_parcela_unica(self, indice: int) -> None:
+        if self.abas.count() <= 2:
+            QMessageBox.warning(self, "Remover parcela", "Pelo menos uma parcela precisa continuar existindo.")
+            return
+        self._remover_parcelas([indice])
 
     def _impedir_mover_identificacao(self, de: int, para: int) -> None:
         # Identificação (índice 0) fica sempre fixa em primeiro — se o

@@ -42,10 +42,14 @@ class BoasVindasDialog(QDialog):
         linha_botoes.addWidget(btn_abrir)
         layout.addLayout(linha_botoes)
 
-        layout.addWidget(QLabel("Projetos recentes:"))
+        layout.addWidget(QLabel("Projetos recentes (um clique abre):"))
         self.lista_recentes = QListWidget()
         self.lista_recentes.addItems(recentes)
-        self.lista_recentes.itemDoubleClicked.connect(self._abrir_recente)
+        # um clique só, não duplo-clique — pedido do usuário: exigir duplo
+        # clique não é óbvio aqui (não é uma lista de arquivos do Explorer),
+        # e um clique só é como listas de "recentes" costumam funcionar
+        # (Word, VS Code etc.).
+        self.lista_recentes.itemClicked.connect(self._abrir_recente)
         layout.addWidget(self.lista_recentes, 1)
         if not recentes:
             self.lista_recentes.setEnabled(False)

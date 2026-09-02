@@ -280,15 +280,20 @@ class AbaPerimetro(QWidget):
         vertices = [linha_para_vertice(linha) for _, linha in preenchidas]
         # reordena_norte_horario só reordena/inverte a lista (não cria Vertice
         # novo), então id(v) ainda identifica a linha original — é assim que
-        # "renumerar" (que não existe em Vertice, só na grade) acompanha o
-        # vértice até a nova posição.
+        # "renumerar" e "pt_original" (nenhum dos dois existe em Vertice, só
+        # na grade — core/tabela_vertices.py) acompanham o vértice até a
+        # nova posição. Bug relatado: "pt_original" sumia depois de
+        # Reorganizar, antes mesmo de renumerar — o profissional perdia a
+        # referência de qual vértice importado era qual.
         renumerar_por_id = {id(v): bool(linha["renumerar"]) for (_, linha), v in zip(preenchidas, vertices)}
+        pt_original_por_id = {id(v): linha["pt_original"] for (_, linha), v in zip(preenchidas, vertices)}
         reordenados = reordena_norte_horario(vertices)
 
         novas_linhas = []
         for v in reordenados:
             nova = vertice_para_linha(v)
             nova["renumerar"] = renumerar_por_id[id(v)]
+            nova["pt_original"] = pt_original_por_id[id(v)]
             novas_linhas.append(nova)
         # linhas sem código (vagas em branco, pra próximo vértice) não
         # entram no reordenamento — sem isto, elas simplesmente

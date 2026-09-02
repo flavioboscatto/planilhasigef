@@ -348,6 +348,36 @@ def test_reorganizar_nao_desloca_colunas(qtbot):
     assert norte["sigma_h"] == "0,03"
 
 
+def test_reorganizar_preserva_pt_original(qtbot):
+    # bug relatado: "pt_original" (nome do ponto tal como veio da
+    # importação, ver core/tabela_vertices.py) sumia depois de Reorganizar
+    # — Vertice (core/models.py) não tem esse campo, então o round-trip
+    # linha_para_vertice/vertice_para_linha o descartava silenciosamente,
+    # mesmo sem o usuário ter renumerado ainda.
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    df = aba.modelo_tabela.dataframe()
+    dados = [
+        {"codigo": "SUL", "e_long": "-48,00", "n_lat": "-10,00", "pt_original": "V3"},
+        {"codigo": "NORTE", "e_long": "-48,00", "n_lat": "-9,00", "pt_original": "V1"},
+        {"codigo": "LESTE", "e_long": "-47,50", "n_lat": "-9,50", "pt_original": "V2"},
+    ]
+    for i, linha in enumerate(dados):
+        for campo, valor in linha.items():
+            coluna = list(df.columns).index(campo)
+            aba.modelo_tabela.setData(aba.modelo_tabela.index(i, coluna), valor, 2)
+
+    aba._reorganizar()
+
+    resultado = aba.modelo_tabela.dataframe()
+    norte = resultado[resultado["codigo"] == "NORTE"].iloc[0]
+    sul = resultado[resultado["codigo"] == "SUL"].iloc[0]
+    leste = resultado[resultado["codigo"] == "LESTE"].iloc[0]
+    assert norte["pt_original"] == "V1"
+    assert sul["pt_original"] == "V3"
+    assert leste["pt_original"] == "V2"
+
+
 def test_reorganizar_reordena_mantendo_renumerar_por_vertice(qtbot):
     aba = _nova_aba()
     qtbot.addWidget(aba)
