@@ -111,6 +111,37 @@ def test_reabrir_projeto_com_varias_parcelas_volta_para_a_parcela_aberta_ao_salv
     assert nova.abas.currentIndex() == 1
 
 
+def test_round_trip_preserva_nome_customizado_da_aba(qtbot):
+    # V4: renomear a aba de parcela (clique direito) precisa sobreviver a
+    # fechar/reabrir o projeto, senão o usuário perde o nome toda vez.
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    janela._adicionar_aba_parcela()
+    janela.abas.setTabText(2, "Fazenda Boa Vista")  # mesmo efeito de _renomear_parcela confirmado
+
+    dados = desserializar(serializar(montar_projeto(janela)))
+
+    nova = JanelaPrincipal()
+    qtbot.addWidget(nova)
+    aplicar_projeto(nova, dados)
+
+    assert nova.abas.tabText(2) == "Fazenda Boa Vista"
+
+
+def test_abrir_projeto_de_versao_antiga_sem_nome_aba_usa_rotulo_padrao(qtbot):
+    # arquivo salvo antes deste campo existir (V3 pra trás) não pode
+    # quebrar — cai no rótulo padrão "Parcela N" que _adicionar_aba_parcela
+    # já dá.
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    dados = desserializar(serializar(montar_projeto(janela)))
+    del dados["parcelas"][0]["nome_aba"]
+
+    aplicar_projeto(janela, dados)
+
+    assert janela.abas.tabText(1) == "Parcela 1"
+
+
 def test_abrir_projeto_de_versao_antiga_sem_parcela_atual_usa_parcela_1_tabela_perimetro(qtbot):
     # arquivo salvo antes deste campo existir (sem "parcela_atual" nem
     # "subaba_atual") não pode quebrar nem sobrar em índice inválido — cai

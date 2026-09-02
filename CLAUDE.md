@@ -85,12 +85,20 @@ ui_qt/visualizar_parcela_dialog.py  diálogo "Visualizar parcela" (V3): desenho
 ui_qt/perimetro_tab.py       aba de uma parcela: cabeçalho + grade + sub-abas de importação
 ui_qt/importacao_tab.py      sub-aba "Importação N" persistente dentro da parcela
 ui_qt/importar_vertices_dialog.py  diálogo de importação de arquivo (TXT/CSV)
+ui_qt/remover_parcela_dialog.py  diálogo "Remover parcela" (V4): lista com caixa de
+                              marcação, remove uma ou várias parcelas de uma vez
+ui_qt/boas_vindas_dialog.py  tela de abertura (V4): Novo projeto/Abrir/Recentes,
+                              mostrada logo após a splash (app_qt.py::main)
+ui_qt/preferencias_qt.py     projetos recentes via QSettings (V4) — fora de core/
+                              (não importa PySide6) e fora de config/ (não é domínio)
 ui_qt/identificacao_tab.py   aba Identificação
 ui_qt/renumeracao_panel.py   painel de numeração (faixa acima das abas) + botões de
-                              exportação (planilha/.txt/.docx)
+                              exportação (planilha/.txt/.docx) + Adicionar/Remover
+                              parcela (V4, expostos aqui, conectados em app_qt.py)
 ui_qt/relatorio_qt.py        recolhe dados das abas ao vivo pro core/relatorio_docx.py
 ui_qt/projeto_qt.py          monta/aplica o projeto .sigefproj a partir da janela,
-                              inclusive qual aba/sub-aba estava aberta ao salvar
+                              inclusive qual aba/sub-aba estava aberta ao salvar e o
+                              nome customizado de cada aba de parcela (V4)
 ui_qt/tema_qt.py             cores do modelo oficial (config/theme_tokens.json) em Qt
 ui_qt/estilo_qt.py           folha de estilo (QSS) global do app
 importers/delimitado.py      leitura de arquivo TXT/CSV pra importação

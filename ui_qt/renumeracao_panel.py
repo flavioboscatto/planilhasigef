@@ -121,16 +121,20 @@ class PainelNumeracao(QWidget):
         linha_exportar.addWidget(self.btn_gerar_relatorio)
         layout_botoes_direita.addLayout(linha_exportar)
 
-        # Renumerar/Atualizar/Marcar/Desmarcar desceram pra junto da grade
-        # que eles afetam (ui_qt/perimetro_tab.py), a pedido do usuário —
-        # aqui ficam só as ações que não têm "dono" de uma parcela só:
-        # Reorganizar/Desfazer continuam agindo na aba ATUAL, e Importar
-        # ocupa o espaço que sobrou.
+        # Renumerar/Atualizar/Marcar/Desmarcar/Reorganizar desceram pra junto
+        # da grade que eles afetam (ui_qt/perimetro_tab.py), a pedido do
+        # usuário — aqui ficam as ações que mexem em TODAS as abas
+        # (Adicionar/Remover parcela, junto de Renumerar/Exportar acima) ou
+        # que não têm "dono" de uma parcela só (Desfazer/Importar agem na
+        # aba ATUAL). Quem sabe adicionar/remover aba é a janela
+        # (app_qt.py), não este painel — só expõe os botões, quem conecta
+        # o clique é ela (mesmo padrão dos botões de exportação acima).
         linha_botoes = QHBoxLayout()
-        btn_reorganizar = _botao_bloco("↻ Reorganizar")
-        btn_reorganizar.setToolTip("Reorganiza a grade da parcela aberta agora (mais ao norte, sentido horário).")
-        btn_reorganizar.clicked.connect(self._reorganizar_atual)
-        linha_botoes.addWidget(btn_reorganizar)
+        self.btn_adicionar_parcela = _botao_bloco("+ Adicionar parcela")
+        linha_botoes.addWidget(self.btn_adicionar_parcela)
+
+        self.btn_remover_parcela = _botao_bloco("- Remover parcela...")
+        linha_botoes.addWidget(self.btn_remover_parcela)
 
         btn_desfazer = _botao_bloco("↶ Desfazer (Ctrl+Z)")
         btn_desfazer.setToolTip(
@@ -174,11 +178,6 @@ class PainelNumeracao(QWidget):
         if aba is None:
             QMessageBox.warning(self, "Numeração", "Abra uma aba de Parcela primeiro.")
         return aba
-
-    def _reorganizar_atual(self) -> None:
-        aba = self._exigir_aba_atual()
-        if aba is not None:
-            aba._reorganizar()
 
     def _importar_atual(self) -> None:
         aba = self._exigir_aba_atual()

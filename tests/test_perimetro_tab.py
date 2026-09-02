@@ -175,6 +175,22 @@ def test_preencher_em_lote_metodo_posicionamento(qtbot):
     assert list(aba.modelo_tabela.dataframe()["metodo_posicionamento"]) == ["PG1", "PG1", "PG1"]
 
 
+def test_botao_reorganizar_esta_conectado_de_verdade(qtbot, monkeypatch):
+    # V4: Reorganizar desceu do painel de Numeração pra junto da grade
+    # (barra_visualizacao, ao lado de Visualizar parcela) — confere que o
+    # botão de verdade chama self._reorganizar, não só que o método existe.
+    from PySide6.QtWidgets import QMessageBox, QPushButton
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    botao = next(b for b in aba.findChildren(QPushButton) if "Reorganizar" in b.text())
+
+    botao.click()  # menos de 3 vértices preenchidos -> só avisa, não quebra
+
+    assert aba.modelo_tabela.rowCount() == 3
+
+
 def test_reorganizar_exige_pelo_menos_tres_vertices(qtbot, monkeypatch):
     # QMessageBox.warning é modal (bloqueia esperando clique) — sem
     # substituir por um stub, o teste travaria pra sempre.

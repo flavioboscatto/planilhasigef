@@ -44,6 +44,10 @@ def montar_projeto(janela) -> dict:
         campos = aba.modelo().model_dump(exclude={"vertices"})
         campos["vertices"] = aba.modelo_tabela.dataframe().to_dict(orient="records")
         campos["importacoes"] = _serializar_importacoes(aba)
+        # rótulo da aba (V4, renomeável pelo usuário) — separado dos campos
+        # do modelo (Denominação/Parcela número), que são conteúdo da
+        # planilha; isto aqui é só o texto da aba na tela.
+        campos["nome_aba"] = janela.abas.tabText(janela.abas.indexOf(aba))
         # qual sub-aba (Tabela de Perímetro/Importação N) estava aberta —
         # sem isto, reabrir o projeto sempre pousava na última sub-aba
         # criada (efeito colateral de _criar_aba_importacao, que muda o
@@ -101,6 +105,12 @@ def aplicar_projeto(janela, dados: dict) -> None:
             **{k: v for k, v in parcela_dados.items() if k not in ("vertices", "importacoes") and v is not None},
         }
         aba.carregar_cabecalho(Perimetro(vertices=[], **valores))
+
+        # ausente = arquivo salvo antes do V4 (renomear aba) — mantém o
+        # rótulo padrão que _adicionar_aba_parcela já deu.
+        nome_aba = parcela_dados.get("nome_aba")
+        if nome_aba:
+            janela.abas.setTabText(janela.abas.indexOf(aba), nome_aba)
 
         tabela = pd.DataFrame(parcela_dados.get("vertices", []), columns=COLUNAS_VERTICE)
         aba.modelo_tabela.substituir(tabela)

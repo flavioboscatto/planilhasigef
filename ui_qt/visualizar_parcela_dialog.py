@@ -189,11 +189,14 @@ class VisualizarParcelaDialog(QDialog):
             self.cena.addItem(linha)
 
         for vertice, ponto in zip(vertices, pontos_cena):
-            circulo = QGraphicsEllipseItem(
-                QRectF(ponto.x() - _RAIO_PONTO, ponto.y() - _RAIO_PONTO, 2 * _RAIO_PONTO, 2 * _RAIO_PONTO)
-            )
+            circulo = QGraphicsEllipseItem(QRectF(-_RAIO_PONTO, -_RAIO_PONTO, 2 * _RAIO_PONTO, 2 * _RAIO_PONTO))
             circulo.setBrush(QBrush(_COR_PONTO))
             circulo.setPen(QPen(_COR_PONTO))
+            circulo.setPos(ponto)
+            # pedido do usuário: o marcador de ponto tem que se comportar
+            # igual ao rótulo do código logo abaixo — só a POSIÇÃO acompanha
+            # o zoom/pan, o tamanho na tela fica fixo.
+            circulo.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
             self.cena.addItem(circulo)
 
             rotulo = QGraphicsTextItem(vertice.codigo)

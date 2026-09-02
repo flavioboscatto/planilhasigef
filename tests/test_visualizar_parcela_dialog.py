@@ -139,3 +139,16 @@ def test_rotulo_do_vertice_tem_tamanho_fixo_e_ignora_zoom(qtbot):
     for rotulo in rotulos:
         assert rotulo.font().pointSize() == 12
         assert rotulo.flags() & QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations
+
+
+def test_marcador_de_ponto_tem_tamanho_fixo_e_ignora_zoom(qtbot):
+    # pedido do usuário: o círculo do vértice tem que se comportar igual ao
+    # rótulo do código (acima) — só a posição acompanha o zoom, o tamanho
+    # na tela fica fixo.
+    dialogo = VisualizarParcelaDialog(lambda: _TRIANGULO, -51.0, "Sul")
+    qtbot.addWidget(dialogo)
+
+    pontos = [i for i in dialogo.cena.items() if isinstance(i, QGraphicsEllipseItem)]
+    assert pontos
+    for ponto in pontos:
+        assert ponto.flags() & QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations

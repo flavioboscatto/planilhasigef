@@ -2,8 +2,9 @@
 respeitar "Renumerar?", e o método Atualizar (só o Tipo) — a lógica mora
 aqui (_renumerar/_atualizar_tipos), mas os botões que a disparam moraram
 pra ui_qt/perimetro_tab.py (que só delega de volta pra estes métodos).
-Reorganizar/Desfazer/Importar continuam com botão neste painel e agem só
-na aba de Parcela ATUAL."""
+Desfazer/Importar continuam com botão neste painel e agem só na aba de
+Parcela ATUAL; Adicionar/Remover parcela (V4) o painel só expõe — quem
+conecta o clique é app_qt.py::JanelaPrincipal."""
 from __future__ import annotations
 
 import json
@@ -139,27 +140,24 @@ def test_importar_atual_chama_o_metodo_da_aba_certa(qtbot, monkeypatch):
     assert chamadas == [True]
 
 
-def test_reorganizar_atual_chama_o_metodo_da_aba_certa(qtbot, monkeypatch):
-    _silenciar_message_box(monkeypatch)
-    aba = _nova_aba(1, qtbot)
-    chamadas = []
-    aba._reorganizar = lambda: chamadas.append(True)
-
-    painel = _novo_painel(lambda: [aba], obter_atual=lambda: aba, qtbot=qtbot)
-    painel._reorganizar_atual()
-
-    assert chamadas == [True]
-
-
 def test_sem_aba_atual_avisa_em_vez_de_quebrar(qtbot, monkeypatch):
     avisos = []
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: avisos.append(a))
 
     painel = _novo_painel(lambda: [], obter_atual=lambda: None, qtbot=qtbot)
-    painel._reorganizar_atual()
     painel._importar_atual()
 
-    assert len(avisos) == 2
+    assert len(avisos) == 1
+
+
+def test_painel_expoe_botoes_adicionar_e_remover_parcela(qtbot):
+    # Reorganizar desceu pra junto da grade (ui_qt/perimetro_tab.py); quem
+    # sabe adicionar/remover aba é a janela (app_qt.py), então o painel só
+    # expõe os botões — quem conecta o clique é ela.
+    painel = _novo_painel(lambda: [], qtbot=qtbot)
+
+    assert painel.btn_adicionar_parcela.text() == "+ Adicionar parcela"
+    assert painel.btn_remover_parcela.text() == "- Remover parcela..."
 
 
 def test_desfazer_atual_volta_estado_da_aba_certa(qtbot, monkeypatch):

@@ -117,11 +117,11 @@ class AbaPerimetro(QWidget):
             )
         )
 
-        # Reorganizar/Marcar todos/Desmarcar todos/Desfazer moraram aqui
-        # antes — subiram pro painel de Numeração (faixa horizontal acima
-        # das abas), lado a lado com Renumerar/Atualizar, a pedido do
-        # usuário. O método continua aqui (_reorganizar) porque o painel
-        # chama nele na aba atualmente aberta.
+        # Marcar todos/Desmarcar todos/Desfazer moraram aqui antes — subiram
+        # pro painel de Numeração (faixa horizontal acima das abas), lado a
+        # lado com Renumerar/Atualizar, a pedido do usuário. Reorganizar fez
+        # o caminho inverso (voltou pra cá, ver barra_visualizacao mais
+        # abaixo): já nasce dentro da aba que afeta.
 
         linha_lote = QHBoxLayout()
         self.combo_coluna_lote = _combo(list(_CAMPOS_LOTE))
@@ -205,8 +205,16 @@ class AbaPerimetro(QWidget):
         layout_aba_tabela.addLayout(barra_linhas)
 
         # fileira própria, não mexe no 2x4 já fechado a pedido do usuário —
-        # visualizar é uma conferência, não uma ação sobre a grade.
+        # Reorganizar/Visualizar são conferência/arrumação do perímetro, não
+        # ações de linha da grade. Reorganizar morava no painel de Numeração
+        # (agia só na aba "atual" por indireção) — desceu pra cá porque já
+        # nasce dentro da aba que afeta, sem precisar dessa indireção.
         barra_visualizacao = QHBoxLayout()
+        btn_reorganizar = _botao_grade("↻ Reorganizar")
+        btn_reorganizar.setToolTip("Reorganiza a grade desta parcela (mais ao norte, sentido horário).")
+        btn_reorganizar.clicked.connect(self._reorganizar)
+        barra_visualizacao.addWidget(btn_reorganizar)
+
         btn_visualizar = _botao_grade("🔍 Visualizar parcela")
         btn_visualizar.setToolTip(
             "Desenha os vértices e o perímetro fechado desta parcela, avisando se "
