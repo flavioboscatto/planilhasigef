@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.numeracao import atualizar_tipos_parcelas, renumerar_parcelas
-from ui_qt.tema_qt import botao_marrom, botao_verde
+from ui_qt.tema_qt import botao_marrom, botao_verde, botao_verde_destaque
 
 _FORMATOS_NUMERO = ["1", "01", "001", "0001", "00001"]
 
@@ -92,8 +92,8 @@ class PainelNumeracao(QWidget):
         linha.addWidget(self._separador_vertical())
         linha.addSpacing(12)
 
-        def _botao_bloco(texto: str) -> QPushButton:
-            botao = botao_verde(texto, tema)
+        def _botao_bloco(texto: str, destaque: bool = False) -> QPushButton:
+            botao = (botao_verde_destaque if destaque else botao_verde)(texto, tema)
             botao.setMinimumWidth(190)
             botao.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             return botao
@@ -107,28 +107,43 @@ class PainelNumeracao(QWidget):
         layout_botoes_direita = QVBoxLayout()
         layout_botoes_direita.setSpacing(4)
 
-        # Exportações em marrom (sai um arquivo), sempre em cima —
-        # separadas visualmente das ações verdes (mexem só no que está na
-        # tela) de baixo. Quem conecta os cliques é o dono da janela
-        # (app_qt.py: tem a Identificação, o diálogo de salvar e as demais
-        # parcelas, que este painel não enxerga sozinho).
+        # 3 fileiras (pedido do usuário — os textos ficavam apertados/
+        # cortados numa fileira só de 5 botões): Importar em cima, Exportar
+        # no meio (marrom, sai um arquivo), Adicionar/Remover parcela +
+        # Desfazer embaixo. Textos encurtados pelo mesmo motivo (sem a
+        # palavra "planilha"/frases longas). Quem conecta os cliques de
+        # Adicionar/Remover parcela é o dono da janela (app_qt.py: tem a
+        # Identificação, os diálogos de salvar e as demais parcelas, que
+        # este painel não enxerga sozinho) — Desfazer também ganhou um
+        # ícone equivalente na barra de ferramentas (app_qt.py), mas
+        # continua aqui também, a pedido do usuário.
+        linha_importar = QHBoxLayout()
+        btn_importar = _botao_bloco("Importar TXT/CSV", destaque=True)
+        btn_importar.setToolTip("Importa vértices de um arquivo TXT/CSV para a parcela aberta agora.")
+        btn_importar.clicked.connect(self._importar_atual)
+        linha_importar.addWidget(btn_importar)
+
+        self.btn_importar_planilha = _botao_bloco("Importar XLS/XLSX/ODS", destaque=True)
+        self.btn_importar_planilha.setToolTip("Importa vértices de uma planilha pra parcela aberta agora.")
+        self.btn_importar_planilha.clicked.connect(self._importar_planilha_atual)
+        linha_importar.addWidget(self.btn_importar_planilha)
+        layout_botoes_direita.addLayout(linha_importar)
+
         linha_exportar = QHBoxLayout()
-        self.btn_exportar_planilha = _botao_exportar("Exportar planilha SIGEF (.ods)")
-        self.btn_exportar_txt = _botao_exportar("Exportar Tabela SIGEF em TXT")
-        self.btn_gerar_relatorio = _botao_exportar("Gerar Relatório em DOCX")
+        self.btn_exportar_planilha = _botao_exportar("Exportar SIGEF (ods)")
+        self.btn_exportar_planilha.setToolTip("Gera a planilha oficial do SIGEF (.ods), pronta pra certificação.")
+        self.btn_exportar_txt = _botao_exportar("Exportar SIGEF (TXT)")
+        self.btn_exportar_txt.setToolTip("Exporta a Tabela de Perímetro em texto (mesmas colunas oficiais).")
+        self.btn_exportar_xlsx = _botao_exportar("Exportar SIGEF (xlsx)")
+        self.btn_exportar_xlsx.setToolTip("Exporta a Tabela de Perímetro em Excel (mesmas colunas oficiais).")
+        self.btn_gerar_relatorio = _botao_exportar("Relatório (docx)")
+        self.btn_gerar_relatorio.setToolTip("Gera o Relatório em Word (identificação + planilha por parcela).")
         linha_exportar.addWidget(self.btn_exportar_planilha)
         linha_exportar.addWidget(self.btn_exportar_txt)
+        linha_exportar.addWidget(self.btn_exportar_xlsx)
         linha_exportar.addWidget(self.btn_gerar_relatorio)
         layout_botoes_direita.addLayout(linha_exportar)
 
-        # Renumerar/Atualizar/Marcar/Desmarcar/Reorganizar desceram pra junto
-        # da grade que eles afetam (ui_qt/perimetro_tab.py), a pedido do
-        # usuário — aqui ficam as ações que mexem em TODAS as abas
-        # (Adicionar/Remover parcela, junto de Renumerar/Exportar acima) ou
-        # que não têm "dono" de uma parcela só (Desfazer/Importar agem na
-        # aba ATUAL). Quem sabe adicionar/remover aba é a janela
-        # (app_qt.py), não este painel — só expõe os botões, quem conecta
-        # o clique é ela (mesmo padrão dos botões de exportação acima).
         linha_botoes = QHBoxLayout()
         self.btn_adicionar_parcela = _botao_bloco("+ Adicionar parcela")
         linha_botoes.addWidget(self.btn_adicionar_parcela)
@@ -143,11 +158,6 @@ class PainelNumeracao(QWidget):
         )
         btn_desfazer.clicked.connect(self._desfazer_atual)
         linha_botoes.addWidget(btn_desfazer)
-
-        btn_importar = _botao_bloco("Importar vértices de um arquivo (TXT/CSV)...")
-        btn_importar.setToolTip("Importa vértices de um arquivo para a parcela aberta agora.")
-        btn_importar.clicked.connect(self._importar_atual)
-        linha_botoes.addWidget(btn_importar)
         layout_botoes_direita.addLayout(linha_botoes)
 
         linha.addLayout(layout_botoes_direita, 1)
@@ -183,6 +193,11 @@ class PainelNumeracao(QWidget):
         aba = self._exigir_aba_atual()
         if aba is not None:
             aba._abrir_importador()
+
+    def _importar_planilha_atual(self) -> None:
+        aba = self._exigir_aba_atual()
+        if aba is not None:
+            aba._abrir_importador_planilha()
 
     def _desfazer_atual(self) -> None:
         aba = self._exigir_aba_atual()

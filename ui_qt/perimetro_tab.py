@@ -32,7 +32,7 @@ from core.tabela_vertices import linha_para_vertice, preenchido, vertice_para_li
 from core.validators.geometria import reordena_norte_horario, verificar_autointersecao
 from ui_qt.importacao_tab import AbaImportacao
 from ui_qt.importar_vertices_dialog import ImportarVerticesDialog
-from ui_qt.tema_qt import MAX_ITENS_VISIVEIS_COMBO, Papel, botao_verde, titulo_secao
+from ui_qt.tema_qt import MAX_ITENS_VISIVEIS_COMBO, Papel, botao_verde, botao_verde_destaque, titulo_secao
 from ui_qt.vertices_table import TabelaVerticesModel, TabelaVerticesView
 from ui_qt.visualizar_parcela_dialog import VisualizarParcelaDialog
 
@@ -79,6 +79,7 @@ class AbaPerimetro(QWidget):
         self._painel_numeracao = painel_numeracao
         self._proxima_importacao = 1
         self._dialogo_importacao: ImportarVerticesDialog | None = None
+        self._dialogo_importacao_planilha: ImportarVerticesDialog | None = None
         self._dialogo_visualizacao: VisualizarParcelaDialog | None = None
 
         opcoes_tipo_vertice = [t["codigo"] for t in dominios["tipos_vertice"]]
@@ -154,8 +155,11 @@ class AbaPerimetro(QWidget):
         self.grade = TabelaVerticesView(self.modelo_tabela)
         layout_aba_tabela.addWidget(self.grade)
 
-        def _botao_grade(texto: str) -> QPushButton:
-            botao = botao_verde(texto, tema)
+        def _botao_grade(texto: str, destaque: bool = False) -> QPushButton:
+            # destaque=True (negrito + borda mais grossa): pedido da
+            # turma-teste pra ressaltar as ações mais usadas/importantes
+            # (Renumerar, Reorganizar, Visualizar parcela) das demais.
+            botao = (botao_verde_destaque if destaque else botao_verde)(texto, tema)
             botao.setMinimumWidth(150)
             botao.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             return botao
@@ -177,7 +181,7 @@ class AbaPerimetro(QWidget):
             "reescreve só o pedaço do Tipo no código, sem reatribuir número."
         )
         btn_atualizar.clicked.connect(self._atualizar_tipos)
-        btn_renumerar = _botao_grade("Renumerar vértices marcados")
+        btn_renumerar = _botao_grade("Renumerar vértices marcados", destaque=True)
         btn_renumerar.setToolTip(
             'Só linhas com "Renumerar?" marcado recebem código novo, em todas '
             "as parcelas abertas — desmarque vértices que não são seus."
@@ -210,12 +214,12 @@ class AbaPerimetro(QWidget):
         # (agia só na aba "atual" por indireção) — desceu pra cá porque já
         # nasce dentro da aba que afeta, sem precisar dessa indireção.
         barra_visualizacao = QHBoxLayout()
-        btn_reorganizar = _botao_grade("↻ Reorganizar")
+        btn_reorganizar = _botao_grade("↻ Reorganizar", destaque=True)
         btn_reorganizar.setToolTip("Reorganiza a grade desta parcela (mais ao norte, sentido horário).")
         btn_reorganizar.clicked.connect(self._reorganizar)
         barra_visualizacao.addWidget(btn_reorganizar)
 
-        btn_visualizar = _botao_grade("🔍 Visualizar parcela")
+        btn_visualizar = _botao_grade("🔍 Visualizar parcela", destaque=True)
         btn_visualizar.setToolTip(
             "Desenha os vértices e o perímetro fechado desta parcela, avisando se "
             "algum lado se cruza com outro."
@@ -354,6 +358,30 @@ class AbaPerimetro(QWidget):
         )
         self._dialogo_importacao.setModal(False)
         self._dialogo_importacao.show()
+
+    def _abrir_importador_planilha(self) -> None:
+        # mesmo diálogo de _abrir_importador, só com formato="planilha"
+        # (XLS/XLSX/ODS em vez de TXT/CSV) — a prévia/mapeamento de coluna/
+        # "Criar versão a partir deste arquivo" são os mesmos, então reusar
+        # a classe evita duplicar toda essa lógica. Instância própria (não
+        # a mesma de _dialogo_importacao) pra dar pra ter os dois diálogos
+        # abertos ao mesmo tempo.
+        self._dialogo_importacao_planilha = ImportarVerticesDialog(
+            opcoes_tipo_vertice=[t["codigo"] for t in self._dominios["tipos_vertice"]],
+            opcoes_metodo=[m["codigo"] for m in self._dominios["metodos_posicionamento"]],
+            opcoes_limite=[t["codigo"] for t in self._dominios["tipos_limite"]],
+            meridianos_disponiveis=self._dominios["meridianos_centrais_brasil"],
+            hemisferios_disponiveis=self._dominios["hemisferio"],
+            meridiano_inicial=float(self.meridiano_central.currentText()),
+            hemisferio_inicial=self.hemisferio.currentText(),
+            tema=self._tema,
+            casas=self._dominios["limites_coordenadas"],
+            criar_aba_importacao=self._criar_aba_importacao,
+            formato="planilha",
+            parent=self,
+        )
+        self._dialogo_importacao_planilha.setModal(False)
+        self._dialogo_importacao_planilha.show()
 
     def _criar_aba_importacao(
         self,

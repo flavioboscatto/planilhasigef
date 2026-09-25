@@ -5,9 +5,9 @@ Streamlit usado nas fases anteriores do projeto.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QContextMenuEvent
-from PySide6.QtWidgets import QApplication, QMenu
+from PySide6.QtWidgets import QApplication, QMenu, QToolBar
 
 from app_qt import JanelaPrincipal
 
@@ -257,16 +257,114 @@ def test_parcelas_podem_ser_reordenadas_entre_si(qtbot):
     assert janela.abas.tabText(2) == "Parcela 1"
 
 
+def _menu_por_titulo(janela, titulo: str):
+    acao = next(a for a in janela.menuBar().actions() if a.text().replace("&", "") == titulo)
+    return acao.menu()
+
+
 def test_menu_arquivo_tem_as_acoes_esperadas(qtbot):
+    # Gerar/Exportar/Relatório saíram daqui pro menu Exportar (V6) — Arquivo
+    # ficou só com ações de PROJETO (.sigefproj).
     janela = JanelaPrincipal()
     qtbot.addWidget(janela)
 
-    menu_arquivo = janela.menuBar().actions()[0].menu()
-    textos = [acao.text() for acao in menu_arquivo.actions() if acao.text()]
+    textos = [acao.text() for acao in _menu_por_titulo(janela, "Arquivo").actions() if acao.text()]
 
     assert "Novo projeto" in textos
     assert "Abrir..." in textos
     assert "Salvar" in textos
     assert "Salvar como..." in textos
-    assert "Gerar planilha SIGEF (.ods)..." in textos
     assert "Sair" in textos
+    assert not any("Gerar planilha" in t for t in textos)
+
+
+def test_menu_importar_tem_as_duas_opcoes(qtbot):
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+
+    textos = [a.text() for a in _menu_por_titulo(janela, "Importar").actions()]
+
+    assert any("TXT/CSV" in t for t in textos)
+    assert any("planilha" in t for t in textos)
+
+
+def test_menu_exportar_tem_as_quatro_opcoes(qtbot):
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+
+    textos = [a.text() for a in _menu_por_titulo(janela, "Exportar").actions()]
+
+    assert any(".ods" in t for t in textos)
+    assert any("TXT" in t for t in textos)
+    assert any("XLSX" in t for t in textos)
+    assert any("DOCX" in t for t in textos)
+
+
+def test_menu_gerenciar_planilha_chama_os_metodos_da_aba_atual(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    aba = janela._abas_perimetro()[0]
+    chamadas = []
+    aba.modelo_tabela.definir_coluna = lambda campo, valor: chamadas.append(("definir_coluna", campo, valor))
+    aba.modelo_tabela.inserir_linha = lambda: chamadas.append(("inserir_linha",))
+    aba._remover_linhas_selecionadas = lambda: chamadas.append(("remover",))
+    aba._mover_linha_selecionada = lambda d: chamadas.append(("mover", d))
+
+    menu = _menu_por_titulo(janela, "Gerenciar Planilha")
+    for acao in menu.actions():
+        if acao.text():
+            acao.trigger()
+
+    assert ("definir_coluna", "renumerar", True) in chamadas
+    assert ("definir_coluna", "renumerar", False) in chamadas
+    assert ("inserir_linha",) in chamadas
+    assert ("remover",) in chamadas
+    assert ("mover", -1) in chamadas
+    assert ("mover", 1) in chamadas
+
+
+def test_menu_gerenciar_planilha_sem_aba_avisa_em_vez_de_quebrar(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    avisos = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: avisos.append(a))
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    janela.abas.setCurrentIndex(0)  # foco na Identificação, não é AbaPerimetro
+
+    janela._adicionar_vertice_atual()
+
+    assert avisos
+
+
+def test_barra_de_ferramentas_tem_abrir_salvar_salvar_como_e_desfazer(qtbot):
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+
+    barras = janela.findChildren(QToolBar)
+    assert len(barras) == 1
+    textos = [a.text() for a in barras[0].actions() if a.text()]
+    assert textos == ["Abrir Projeto", "Salvar", "Salvar Como", "Desfazer"]
+
+
+def test_botao_desfazer_da_barra_desfaz_a_grade_da_aba_atual(qtbot):
+    # não dá pra substituir painel_numeracao._desfazer_atual DEPOIS de
+    # construída a janela e esperar que o sinal já conectado chame a
+    # versão nova — Qt captura o método vinculado no connect(). Por isso
+    # este teste confere o EFEITO real (desfazer de verdade), não uma
+    # chamada espionada.
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    aba = janela._abas_perimetro()[0]
+    col_codigo = aba.modelo_tabela.dataframe().columns.get_loc("codigo")
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "ORIGINAL", Qt.ItemDataRole.EditRole)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "MUDOU", Qt.ItemDataRole.EditRole)
+
+    barra = janela.findChildren(QToolBar)[0]
+    acao_desfazer = next(a for a in barra.actions() if a.text() == "Desfazer")
+    acao_desfazer.trigger()
+
+    assert aba.modelo_tabela.dataframe().at[0, "codigo"] == "ORIGINAL"

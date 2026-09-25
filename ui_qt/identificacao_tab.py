@@ -106,7 +106,7 @@ class AbaIdentificacao(QWidget):
 
         layout.addWidget(titulo_secao("Identificação da Área", tema["area_titulo"]))
         self.denominacao_area = QLineEdit()
-        layout.addLayout(_form("Denominação", self.denominacao_area))
+        layout.addLayout(_form("Denominação da área", self.denominacao_area))
 
         self.situacao = _combo(dominios["situacao"])
         self.natureza_area = _combo(dominios["natureza_area"])

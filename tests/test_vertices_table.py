@@ -11,10 +11,11 @@ from pathlib import Path
 import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtWidgets import QWidget
 
 from core.tabela_vertices import tabela_vazia
 from ui_qt.tema_qt import carregar_tema
-from ui_qt.vertices_table import TabelaVerticesModel, TabelaVerticesView
+from ui_qt.vertices_table import TabelaVerticesModel, TabelaVerticesView, _ComboDelegate
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 
@@ -220,21 +221,15 @@ def test_coluna_de_combo_mostra_setinha_indicativa_mas_edicao_fica_limpa(qtbot):
     assert modelo.data(modelo.index(0, col_tipo), Qt.ItemDataRole.EditRole) == "M"
 
 
-def test_clicar_na_seta_da_coluna_combo_abre_o_editor(qtbot):
-    view = _nova_view()
-    qtbot.addWidget(view)
-    modelo = view.model()
-    col_tipo = modelo.dataframe().columns.get_loc("tipo_vertice")
-    indice = modelo.index(0, col_tipo)
+def _clicar(view, indice, x: float) -> list:
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent
 
     aberto = []
     view.edit = lambda i: aberto.append(i) or True  # substitui só pra este teste
 
     retangulo = view.visualRect(indice)
-    from PySide6.QtCore import QPointF
-    from PySide6.QtGui import QMouseEvent
-
-    local = QPointF(retangulo.right() - 2, retangulo.center().y())
+    local = QPointF(x, retangulo.center().y())
     evento = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress,
         local,
@@ -244,8 +239,87 @@ def test_clicar_na_seta_da_coluna_combo_abre_o_editor(qtbot):
         Qt.KeyboardModifier.NoModifier,
     )
     view.mousePressEvent(evento)
+    return aberto
+
+
+def test_combo_delegate_tem_opcao_em_branco_primeiro(qtbot, monkeypatch):
+    # pedido do usuário: dá pra "limpar" a célula escolhendo o item em
+    # branco, sem precisar apagar via teclado.
+    #
+    # Desliga o showPopup agendado (QTimer.singleShot(0, ...)) pra este
+    # teste: monkeypatch.setattr direto em "QTimer.singleShot" NÃO funciona
+    # (é um método C++/Shiboken — atribuir na classe não intercepta a
+    # chamada real, mesmo motivo de QMenu.exec já visto neste projeto).
+    # Sem isto, o showPopup agendado fica pendente na fila de eventos do Qt
+    # e dispara mais tarde, em cima de um QComboBox já destruído pelo
+    # término deste teste — access violation intermitente num teste
+    # SEGUINTE, sem relação nenhuma com ele. Substituir o próprio nome
+    # "QTimer" no módulo (objeto Python puro) evita o C++ por completo.
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("ui_qt.vertices_table.QTimer", SimpleNamespace(singleShot=lambda *a, **k: None))
+    janela = QWidget()
+    qtbot.addWidget(janela)
+    delegate = _ComboDelegate(["M", "P", "V"])
+
+    editor = delegate.createEditor(janela, None, None)
+    qtbot.addWidget(editor)
+
+    assert editor.itemText(0) == ""
+    assert [editor.itemText(i) for i in range(1, editor.count())] == ["M", "P", "V"]
+
+
+def test_clicar_na_seta_da_coluna_combo_abre_o_editor(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    col_tipo = modelo.dataframe().columns.get_loc("tipo_vertice")
+    indice = modelo.index(0, col_tipo)
+
+    retangulo = view.visualRect(indice)
+    aberto = _clicar(view, indice, retangulo.right() - 2)
 
     assert aberto == [indice]
+
+
+def test_clicar_em_qualquer_ponto_da_celula_combo_abre_o_editor(qtbot):
+    # bug relatado pela turma-teste: só a "setinha" (últimos ~20px) abria de
+    # primeira — o resto da célula (a maior parte, onde o texto aparece) só
+    # selecionava, dando a impressão de precisar de 2-3 cliques.
+    view = _nova_view()
+    qtbot.addWidget(view)
+    modelo = view.model()
+    col_tipo = modelo.dataframe().columns.get_loc("tipo_vertice")
+    indice = modelo.index(0, col_tipo)
+
+    retangulo = view.visualRect(indice)
+    aberto = _clicar(view, indice, retangulo.left() + 2)
+
+    assert aberto == [indice]
+
+
+def test_clicar_em_celula_de_texto_continua_so_selecionando(qtbot):
+    # não pode virar "clica em qualquer coluna e já edita" — só as 3
+    # colunas de combo (ver _COLUNAS_COMBO); o resto continua exigindo
+    # duplo clique/tecla, pra não atrapalhar arrastar/selecionar bloco.
+    #
+    # qtbot.mouseClick (não um QMouseEvent construído à mão + chamada
+    # direta de mousePressEvent, como no teste acima): pra colunas de texto
+    # a chamada cai em super().mousePressEvent(), nunca exercitado antes
+    # neste arquivo com evento sintético — fazer isso à mão travou o
+    # processo (falha de acesso do Qt) numa rodada da suíte inteira.
+    view = _nova_view()
+    qtbot.addWidget(view)
+    view.show()
+    modelo = view.model()
+    col_codigo = modelo.dataframe().columns.get_loc("codigo")
+    indice = modelo.index(0, col_codigo)
+
+    ponto = view.visualRect(indice).center()
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=ponto)
+
+    assert view.state() != view.State.EditingState
+    assert view.currentIndex() == indice
 
 
 def test_mover_linha_para_cima_troca_com_a_vizinha_de_cima(qtbot):
@@ -400,3 +474,52 @@ def test_ctrl_z_na_view_chama_desfazer(qtbot):
     qtbot.keySequence(view, QKeySequence.StandardKey.Undo)
 
     assert modelo.dataframe().at[0, "codigo"] != "MUDOU"
+
+
+def test_painel_congelado_mostra_so_as_4_primeiras_colunas(qtbot):
+    # pedido do usuário: Pt.Original/Renum./Tipo/Código continuam visíveis
+    # rolando a grade na horizontal — as outras 11 colunas ficam escondidas
+    # no painel congelado (só aparecem na view principal, que rola).
+    from core.tabela_vertices import COLUNAS_VERTICE
+
+    view = _nova_view()
+    qtbot.addWidget(view)
+
+    congelado = view.painel_congelado
+    for i, campo in enumerate(COLUNAS_VERTICE):
+        assert congelado.isColumnHidden(i) == (i >= 4), campo
+
+
+def test_painel_congelado_compartilha_selecao_com_a_view_principal(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+
+    assert view.painel_congelado.selectionModel() is view.selectionModel()
+
+
+def test_redimensionar_coluna_congelada_na_view_principal_propaga_pro_painel(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+
+    view.setColumnWidth(0, 150)
+
+    assert view.painel_congelado.columnWidth(0) == 150
+
+
+def test_geometria_do_painel_congelado_bate_com_a_soma_das_4_colunas(qtbot):
+    view = _nova_view()
+    qtbot.addWidget(view)
+
+    largura_esperada = sum(view.columnWidth(c) for c in range(4))
+
+    assert view.painel_congelado.geometry().width() == largura_esperada
+
+
+def test_painel_congelado_nao_recebe_foco_de_teclado(qtbot):
+    # todo atalho de teclado (Ctrl+Z/C/V/D) precisa continuar passando só
+    # pela view principal — duplicar isso no painel dispararia a ação duas
+    # vezes se ele pudesse ganhar foco.
+    view = _nova_view()
+    qtbot.addWidget(view)
+
+    assert view.painel_congelado.focusPolicy() == Qt.FocusPolicy.NoFocus

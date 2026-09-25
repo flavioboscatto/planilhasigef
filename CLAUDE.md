@@ -53,8 +53,10 @@ arquivo traz só o que você precisa saber para não quebrar nada.
 ## Arquitetura
 
 ```
-app_qt.py                    entrypoint (QApplication/QMainWindow) — menu Arquivo,
-                              abas (Identificação + parcelas), toolbar de parcelas
+app_qt.py                    entrypoint (QApplication/QMainWindow) — menus (Arquivo/
+                              Importar/Exportar/Gerenciar Planilha), toolbar de ícones
+                              (Abrir/Salvar/Salvar Como/Desfazer), abas (Identificação
+                              + parcelas)
 core/template_loader.py      carrega o modelo local + sha256 (cache em memória)
 core/ods_writer.py           escrita e clonagem de abas de perímetro
 core/tabela_vertices.py      conversão DataFrame <-> Vertice (Pydantic); coluna
@@ -66,6 +68,8 @@ core/parsing.py              parse de número/coordenada/CPF-CNPJ tolerante a fo
 core/formatacao_vertices.py  formata vértices igual à planilha final (GMS, casas
                               decimais) — reaproveitado por exportacao_txt/relatorio_docx
 core/exportacao_txt.py       exporta a Tabela de Perímetro em TXT (colunas oficiais)
+core/exportacao_xlsx.py      exporta a Tabela de Perímetro em XLSX (mesmas colunas,
+                              uma aba por parcela) — não confundir com core/ods_writer.py
 core/relatorio_docx.py       gera o Relatório em DOCX (identificação + por parcela:
                               resumo, importações, planilha em página paisagem)
 core/models.py               Pydantic: Identificacao, Perimetro, Vertice
@@ -78,7 +82,11 @@ core/sgl.py                  área/distância/perímetro no Sistema Geodésico L
                               `math`, sem pyproj/shapely (ver docstring do módulo)
 core/projeto.py              serialização do projeto .sigefproj (ver regra 6)
 ui_qt/vertices_table.py      grade de vértices (QTableView) — única porta de
-                              entrada pra essa grade; nenhum outro módulo a redesenha
+                              entrada pra essa grade; nenhum outro módulo a redesenha.
+                              Freeze panes das 4 primeiras colunas (Pt.Original/Renum./
+                              Tipo/Código): TabelaVerticesView.painel_congelado é uma
+                              segunda instância da mesma classe (padrão "Frozen Column"
+                              do próprio Qt — QTableView não congela coluna nativamente)
 ui_qt/visualizar_parcela_dialog.py  diálogo "Visualizar parcela" (V3): desenho
                               nativo Qt (QGraphicsView, zoom no scroll + pan por
                               arraste) dos vértices + polilinha + área SGL/INCRA
@@ -102,6 +110,8 @@ ui_qt/projeto_qt.py          monta/aplica o projeto .sigefproj a partir da janel
 ui_qt/tema_qt.py             cores do modelo oficial (config/theme_tokens.json) em Qt
 ui_qt/estilo_qt.py           folha de estilo (QSS) global do app
 importers/delimitado.py      leitura de arquivo TXT/CSV pra importação
+importers/planilha.py        leitura de planilha XLS/XLSX/ODS pra importação (V5) —
+                              mesma sistemática de delimitado.py, DataFrame cru
 config/                      cell_map.yaml, dominios.json, theme_tokens.json, municipios.json
 assets/icone_app.ico         ícone do app (barra de título/tarefas e do .exe)
 assets/abertura.png          imagem da splash screen (app_qt.py::main, ~3s na abertura)

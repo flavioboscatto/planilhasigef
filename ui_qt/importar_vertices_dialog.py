@@ -12,6 +12,7 @@ Streamlit; Qt não tem esse problema).
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable
 
 import pandas as pd
@@ -42,6 +43,7 @@ from core.parsing import (
     parse_numero,
 )
 from importers.delimitado import SEPARADORES, ler_arquivo
+from importers.planilha import ler_planilha, nomes_das_abas
 
 _CAMPOS_NUMERICOS = {"sigma_long", "sigma_lat", "h", "sigma_h"}
 
@@ -56,15 +58,15 @@ _CAMPOS_VERTICE = {
     "(ignorar)": None,
     "Código do vértice": "codigo",
     "E / Longitude": "e_long",
-    "Sigma Long": "sigma_long",
+    "Sigma Long/E": "sigma_long",
     "N / Latitude": "n_lat",
-    "Sigma Lat": "sigma_lat",
+    "Sigma Lat/N": "sigma_lat",
     "h (altitude elipsoidal)": "h",
     "Sigma h": "sigma_h",
     "Método de Posicionamento": "metodo_posicionamento",
     "Tipo de Limite": "tipo_limite",
     "CNS": "cns",
-    "Matrícula": "matricula",
+    "Matrícula/Reg.Imóveis": "matricula",
     "Descritivo": "descritivo",
 }
 
@@ -82,10 +84,21 @@ class ImportarVerticesDialog(QDialog):
         tema: dict,
         casas: dict,
         criar_aba_importacao: Callable[[pd.DataFrame, pd.DataFrame | None, float, str], None],
+        formato: str = "texto",
         parent=None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Importar vértices de um arquivo (TXT/CSV)")
+        # formato="planilha" (XLS/XLSX/ODS) reaproveita este mesmo diálogo —
+        # prévia/mapeamento de coluna/sistema de coordenadas/"Criar versão"
+        # já são agnósticos de formato de origem (core/tabela_vertices.py
+        # nem entra aqui, tudo trabalha em cima do DataFrame cru). Só muda
+        # como o arquivo é escolhido/lido (ver _escolher_arquivo/_recarregar_preview).
+        self._formato = formato
+        self.setWindowTitle(
+            "Importar vértices de uma planilha (XLS/XLSX/ODS)"
+            if formato == "planilha"
+            else "Importar vértices de um arquivo (TXT/CSV)"
+        )
         self.resize(900, 700)
         self._opcoes_tipo_vertice = opcoes_tipo_vertice
         self._opcoes_metodo = opcoes_metodo
@@ -96,6 +109,7 @@ class ImportarVerticesDialog(QDialog):
         self._casas = casas
         self._criar_aba_importacao = criar_aba_importacao
         self._df_bruto: pd.DataFrame | None = None
+        self._extensao_arquivo: str | None = None
         self._combos_mapeamento: dict[str, QComboBox] = {}
 
         layout_geral = QVBoxLayout(self)
@@ -109,6 +123,7 @@ class ImportarVerticesDialog(QDialog):
         layout_geral.addLayout(linha_arquivo)
 
         linha_opcoes = QHBoxLayout()
+        self.rotulo_separador = QLabel("Separador:")
         self.combo_separador = QComboBox()
         self.combo_separador.addItems([*SEPARADORES, "Outro"])
         self.combo_separador.currentTextChanged.connect(self._recarregar_preview)
@@ -117,16 +132,31 @@ class ImportarVerticesDialog(QDialog):
         self.campo_separador_customizado.setVisible(False)
         self.campo_separador_customizado.textChanged.connect(self._recarregar_preview)
         self.combo_separador.currentTextChanged.connect(
-            lambda texto: self.campo_separador_customizado.setVisible(texto == "Outro")
+            lambda texto: self.campo_separador_customizado.setVisible(
+                texto == "Outro" and self._formato == "texto"
+            )
         )
+        # só relevante pra planilha (pode ter mais de uma aba); populado em
+        # _escolher_arquivo depois de escolhido o arquivo.
+        self.rotulo_aba_planilha = QLabel("Aba da planilha:")
+        self.combo_aba_planilha = QComboBox()
+        self.combo_aba_planilha.currentTextChanged.connect(self._recarregar_preview)
         self.checa_cabecalho = QCheckBox("Arquivo tem linha de cabeçalho")
         self.checa_cabecalho.setChecked(True)
         self.checa_cabecalho.toggled.connect(self._recarregar_preview)
-        linha_opcoes.addWidget(QLabel("Separador:"))
+        linha_opcoes.addWidget(self.rotulo_separador)
         linha_opcoes.addWidget(self.combo_separador)
         linha_opcoes.addWidget(self.campo_separador_customizado)
+        linha_opcoes.addWidget(self.rotulo_aba_planilha)
+        linha_opcoes.addWidget(self.combo_aba_planilha)
         linha_opcoes.addWidget(self.checa_cabecalho)
         layout_geral.addLayout(linha_opcoes)
+
+        eh_planilha = self._formato == "planilha"
+        self.rotulo_separador.setVisible(not eh_planilha)
+        self.combo_separador.setVisible(not eh_planilha)
+        self.rotulo_aba_planilha.setVisible(eh_planilha)
+        self.combo_aba_planilha.setVisible(eh_planilha)
 
         layout_geral.addWidget(QLabel("Prévia (5 primeiras linhas):"))
         self.tabela_previa = QTableWidget()
@@ -206,24 +236,54 @@ class ImportarVerticesDialog(QDialog):
         return SEPARADORES[escolha]
 
     def _escolher_arquivo(self) -> None:
-        caminho, _ = QFileDialog.getOpenFileName(
-            self, "Escolher arquivo de vértices", "", "Texto/CSV (*.txt *.csv);;Todos os arquivos (*.*)"
-        )
+        if self._formato == "planilha":
+            filtro = "Planilha (*.xls *.xlsx *.ods);;Todos os arquivos (*.*)"
+        else:
+            filtro = "Texto/CSV (*.txt *.csv);;Todos os arquivos (*.*)"
+        caminho, _ = QFileDialog.getOpenFileName(self, "Escolher arquivo de vértices", "", filtro)
         if not caminho:
             return
         self._caminho_arquivo = caminho
+        self._extensao_arquivo = Path(caminho).suffix
         self.rotulo_arquivo.setText(caminho)
+
+        if self._formato == "planilha":
+            try:
+                with open(caminho, "rb") as f:
+                    abas = nomes_das_abas(f.read(), self._extensao_arquivo)
+            except Exception as exc:
+                QMessageBox.critical(self, "Erro ao ler planilha", f"Não consegui abrir o arquivo: {exc}")
+                self._df_bruto = None
+                return
+            # bloqueia sinal durante a repopulação — currentTextChanged
+            # dispararia _recarregar_preview no meio da troca, antes da
+            # lista de abas estar completa.
+            self.combo_aba_planilha.blockSignals(True)
+            self.combo_aba_planilha.clear()
+            self.combo_aba_planilha.addItems(abas)
+            self.combo_aba_planilha.blockSignals(False)
+
         self._recarregar_preview()
 
     def _recarregar_preview(self) -> None:
-        if not getattr(self, "_caminho_arquivo", None) or not self._separador_atual():
+        if not getattr(self, "_caminho_arquivo", None):
             return
         try:
             with open(self._caminho_arquivo, "rb") as f:
                 conteudo = f.read()
-            self._df_bruto = ler_arquivo(conteudo, self._separador_atual(), self.checa_cabecalho.isChecked())
+            if self._formato == "planilha":
+                if not self.combo_aba_planilha.currentText():
+                    return
+                self._df_bruto = ler_planilha(
+                    conteudo, self._extensao_arquivo, self.combo_aba_planilha.currentText(),
+                    self.checa_cabecalho.isChecked(),
+                )
+            else:
+                if not self._separador_atual():
+                    return
+                self._df_bruto = ler_arquivo(conteudo, self._separador_atual(), self.checa_cabecalho.isChecked())
         except Exception as exc:
-            QMessageBox.critical(self, "Erro ao ler arquivo", f"Não consegui ler o arquivo com esse separador: {exc}")
+            QMessageBox.critical(self, "Erro ao ler arquivo", f"Não consegui ler o arquivo: {exc}")
             self._df_bruto = None
             return
         self._preencher_previa()

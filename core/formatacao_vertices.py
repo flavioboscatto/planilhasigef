@@ -39,7 +39,7 @@ ROTULOS_OFICIAIS = {
     "metodo_posicionamento": "Met. Posic.",
     "tipo_limite": "Tipo Limite",
     "cns": "CNS",
-    "matricula": "Matrícula",
+    "matricula": "Matrícula/Reg.Imóveis",
     "descritivo": "Descritivo",
 }
 

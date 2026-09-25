@@ -23,6 +23,7 @@ from PySide6.QtGui import QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QFrame,
     QHeaderView,
     QStyledItemDelegate,
     QTableView,
@@ -50,7 +51,7 @@ _ROTULOS = {
     "metodo_posicionamento": "Met. Posic.",
     "tipo_limite": "Tipo Limite",
     "cns": "CNS",
-    "matricula": "Matrícula",
+    "matricula": "Matrícula/Reg.Imóveis",
     "descritivo": "Descritivo",
 }
 
@@ -65,9 +66,12 @@ _COLUNAS_CONFRONTANTE = {"tipo_limite", "cns", "matricula", "descritivo"}
 # colunas com o _ComboDelegate (editor de combo) — recebem uma setinha "▾"
 # no DisplayRole (célula não editada não tinha nenhuma pista visual de que
 # abre um combo, só se descobria clicando) e abrem o editor com um clique
-# direto nessa área, não só duplo clique/tecla (ver TabelaVerticesView).
+# em qualquer ponto da célula, não só duplo clique/tecla (ver TabelaVerticesView).
 _COLUNAS_COMBO = {"tipo_vertice", "metodo_posicionamento", "tipo_limite"}
-_LARGURA_SETA = 20
+
+# freeze panes (pedido do usuário): identidade do vértice sempre visível
+# rolando a grade na horizontal — Pt.Original/Renum./Tipo/Código.
+_NUM_COLUNAS_CONGELADAS = 4
 
 _MARCADO = {Qt.CheckState.Checked, Qt.CheckState.Checked.value, 2}
 
@@ -308,7 +312,11 @@ class _ComboDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         combo = QComboBox(parent)
-        combo.addItems(self._opcoes)
+        # item em branco primeiro (pedido do usuário): dá pra "limpar" a
+        # célula escolhendo-o, sem precisar apagar via teclado — "" já é o
+        # estado normal de célula não preenchida em toda a grade (core/
+        # tabela_vertices.py::preenchido).
+        combo.addItems([""] + self._opcoes)
         combo.setMaxVisibleItems(MAX_ITENS_VISIVEIS_COMBO)
         # abre o popup já na hora de entrar na célula — sem isto, dava
         # duplo clique (que abre o editor) e ainda precisava clicar de
@@ -332,7 +340,7 @@ class TabelaVerticesView(QTableView):
     tempo antes: colagem em bloco de verdade era recurso Enterprise do
     AG-Grid)."""
 
-    def __init__(self, modelo: TabelaVerticesModel, parent=None) -> None:
+    def __init__(self, modelo: TabelaVerticesModel, parent=None, _painel_congelado: bool = False) -> None:
         super().__init__(parent)
         self.setModel(modelo)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ContiguousSelection)
@@ -350,13 +358,20 @@ class TabelaVerticesView(QTableView):
         self.setColumnWidth(COLUNAS_VERTICE.index("descritivo"), 270)
         self.setColumnWidth(COLUNAS_VERTICE.index("pt_original"), 90)
 
+        # colunas "justas" ao texto do cabeçalho (pedido da turma-teste): sem
+        # isto, "Matrícula/Reg.Imóveis" cortava na largura padrão do Qt, e
+        # Renum./Tipo/Sigma Long/Sigma Lat/Sigma h sobravam largos à toa
+        # (valores curtos — os sigmas são sempre 3 algarismos).
+        for campo in ("renumerar", "sigma_long", "sigma_lat", "sigma_h", "matricula"):
+            self.setColumnWidth(COLUNAS_VERTICE.index(campo), self._largura_para_cabecalho(campo))
+
         self._colunas_combo = {COLUNAS_VERTICE.index(c) for c in _COLUNAS_COMBO}
-        # sem largura própria, "Tipo" (coluna estreita, cabeçalho curto)
-        # ficava com o combo/seta espremidos contra a borda — "Met. Posic."
-        # e "Tipo Limite" só pareciam bons por acaso, por já serem colunas
-        # mais largas.
-        for campo in _COLUNAS_COMBO:
+        # "Met. Posic."/"Tipo Limite" continuam largos o bastante pro
+        # cabeçalho de propósito (110px) — só "Tipo" (cabeçalho bem mais
+        # curto) sai desse padrão pra ficar justo também.
+        for campo in _COLUNAS_COMBO - {"tipo_vertice"}:
             self.setColumnWidth(COLUNAS_VERTICE.index(campo), 110)
+        self.setColumnWidth(COLUNAS_VERTICE.index("tipo_vertice"), self._largura_para_cabecalho("tipo_vertice"))
 
         self.setItemDelegateForColumn(COLUNAS_VERTICE.index("tipo_vertice"), _ComboDelegate(modelo.opcoes_tipo_vertice, self))
         self.setItemDelegateForColumn(
@@ -364,19 +379,84 @@ class TabelaVerticesView(QTableView):
         )
         self.setItemDelegateForColumn(COLUNAS_VERTICE.index("tipo_limite"), _ComboDelegate(modelo.opcoes_limite, self))
 
+        if not _painel_congelado:
+            self._criar_painel_congelado(modelo)
+
+    def _criar_painel_congelado(self, modelo: TabelaVerticesModel) -> None:
+        # "freeze panes" (pedido do usuário) — Qt não tem congelamento de
+        # coluna nativo em QTableView; este é o padrão oficial do próprio Qt
+        # ("Frozen Column Example"): uma segunda view com o MESMO modelo,
+        # mostrando só as colunas congeladas, sobreposta no canto superior
+        # esquerdo da view principal. Reaproveitar TabelaVerticesView pra
+        # essa segunda view (em vez de um QTableView cru) dá de graça o
+        # delegate/clique-abre-combo do Tipo (uma das 4 colunas congeladas)
+        # — `_painel_congelado=True` só corta a recursão (senão cada painel
+        # tentaria criar o seu próprio, infinitamente).
+        self.painel_congelado = TabelaVerticesView(modelo, parent=self, _painel_congelado=True)
+        self.painel_congelado.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.painel_congelado.verticalHeader().hide()
+        self.painel_congelado.setSelectionModel(self.selectionModel())
+        self.painel_congelado.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.painel_congelado.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.painel_congelado.setFrameShape(QFrame.Shape.NoFrame)
+        self.painel_congelado.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        for coluna in range(len(COLUNAS_VERTICE)):
+            self.painel_congelado.setColumnHidden(coluna, coluna >= _NUM_COLUNAS_CONGELADAS)
+            if coluna < _NUM_COLUNAS_CONGELADAS:
+                # a largura de cada coluna congelada é definida pela view
+                # PRINCIPAL (ver _sincronizar_largura_congelada) — copia o
+                # valor já calculado nela, em vez de deixar este painel
+                # calcular o seu próprio (podem divergir por acaso).
+                self.painel_congelado.setColumnWidth(coluna, self.columnWidth(coluna))
+        self.painel_congelado.show()
+
+        self.verticalScrollBar().valueChanged.connect(self.painel_congelado.verticalScrollBar().setValue)
+        self.horizontalHeader().sectionResized.connect(self._sincronizar_largura_congelada)
+        self._atualizar_geometria_congelada()
+
+    def _sincronizar_largura_congelada(self, indice: int, _antiga: int, nova: int) -> None:
+        if indice < _NUM_COLUNAS_CONGELADAS:
+            self.painel_congelado.setColumnWidth(indice, nova)
+        self._atualizar_geometria_congelada()
+
+    def _atualizar_geometria_congelada(self) -> None:
+        largura = sum(self.columnWidth(c) for c in range(_NUM_COLUNAS_CONGELADAS))
+        self.painel_congelado.setGeometry(
+            self.verticalHeader().width() + self.frameWidth(),
+            self.frameWidth(),
+            largura,
+            self.viewport().height() + self.horizontalHeader().height(),
+        )
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "painel_congelado"):
+            self._atualizar_geometria_congelada()
+
+    def _largura_para_cabecalho(self, campo: str, extra: int = 24) -> int:
+        # largura calculada pela fonte de verdade (não um pixel chutado) —
+        # garante "sem corte" em qualquer DPI/fonte do Windows do usuário,
+        # não só na tela onde isto foi ajustado.
+        fm = self.horizontalHeader().fontMetrics()
+        maior_linha = max(fm.horizontalAdvance(linha) for linha in _ROTULOS[campo].split("\n"))
+        return maior_linha + extra
+
     def mousePressEvent(self, event) -> None:
-        # clicar na setinha (ver TabelaVerticesModel._COLUNAS_COMBO) abre o
-        # combo de primeira, sem precisar de duplo clique — clicar no resto
-        # da célula continua só selecionando, pra não atrapalhar
-        # arrastar/selecionar bloco pra copiar/colar.
+        # qualquer clique numa célula de coluna-combo (Tipo/Método de
+        # Posicionamento/Tipo de Limite) já abre o editor — antes só um
+        # clique bem na "setinha" (últimos ~20px) abria de primeira, e o
+        # resto da célula (a maior parte, onde o texto fica) só selecionava;
+        # relatado pela turma-teste como "precisa de 2 ou 3 cliques".
+        # Efeito colateral aceito: não dá mais pra COMEÇAR um arrasto de
+        # seleção múltipla numa célula-combo (só nas de texto) — já existe
+        # "Preencher em lote" (ui_qt/perimetro_tab.py) como ferramenta
+        # dedicada pra editar essas 3 colunas em massa.
         if event.button() == Qt.MouseButton.LeftButton:
             indice = self.indexAt(event.position().toPoint())
             if indice.isValid() and indice.column() in self._colunas_combo:
-                retangulo = self.visualRect(indice)
-                if event.position().toPoint().x() >= retangulo.right() - _LARGURA_SETA:
-                    self.setCurrentIndex(indice)
-                    self.edit(indice)
-                    return
+                self.setCurrentIndex(indice)
+                self.edit(indice)
+                return
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event) -> None:

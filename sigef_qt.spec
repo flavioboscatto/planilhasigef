@@ -20,11 +20,15 @@ binaries = []
 hiddenimports = []
 
 # pyproj precisa do banco proj.db; shapely/lxml/pydantic têm extensão
-# compilada. PySide6 fica de fora desta lista de propósito: o hook nativo
-# do PyInstaller pra PySide6 já detecta e empacota só os módulos Qt
-# realmente importados (widgets/core/gui) — um collect_all aqui traria
-# WebEngine, Multimedia, 3D etc. que este app nunca usa.
-for pacote in ("pyproj", "shapely", "lxml", "pydantic"):
+# compilada; openpyxl/odf/xlrd (importers/planilha.py, V5) são os motores
+# de leitura de XLSX/ODS/XLS do pandas — o hook padrão às vezes não pega
+# tudo que pandas carrega dinamicamente por dentro, coleta explícita evita
+# erro só na hora de abrir um arquivo desse formato no .exe empacotado.
+# PySide6 fica de fora desta lista de propósito: o hook nativo do
+# PyInstaller pra PySide6 já detecta e empacota só os módulos Qt realmente
+# importados (widgets/core/gui) — um collect_all aqui traria WebEngine,
+# Multimedia, 3D etc. que este app nunca usa.
+for pacote in ("pyproj", "shapely", "lxml", "pydantic", "openpyxl", "odf", "xlrd"):
     d, b, h = collect_all(pacote)
     datas += d
     binaries += b

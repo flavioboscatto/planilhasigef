@@ -83,6 +83,21 @@ def botao_verde(texto: str, tema: dict[str, Papel]) -> QPushButton:
     return botao
 
 
+def botao_verde_destaque(texto: str, tema: dict[str, Papel]) -> QPushButton:
+    """Mesma cor de botao_verde, mas em negrito e com borda mais grossa —
+    pedido do usuário (turma-teste) pra destacar as ações mais importantes/
+    usadas com frequência (Importar, Renumerar, Reorganizar, Visualizar
+    parcela) das demais ações verdes comuns."""
+    cor = tema["perimetro_entrada"].fundo
+    botao = QPushButton(texto)
+    botao.setStyleSheet(
+        f"QPushButton {{ background: {cor.name()}; border: 2px solid {cor.darker(140).name()}; font-weight: bold; }}"
+        f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
+        f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
+    )
+    return botao
+
+
 def botao_marrom(texto: str, tema: dict[str, Papel]) -> QPushButton:
     """Botão de exportação (planilha/TXT/relatório) no mesmo marrom escuro
     de "servico_titulo" — a faixa "Identificação do Serviço de

@@ -37,9 +37,11 @@ _TAMANHO_TABELA = Pt(8)
 _MARGEM_ESQUERDA = Cm(2)
 _MARGEM_OUTRAS = Cm(1)
 
-# larguras da tabela Planilha SIGEF (cm) — Met.Posic./Tipo Limite/CNS/
-# Matrícula "justas" (só o necessário pro cabeçalho, pedido do usuário),
-# Descritivo ganha o espaço que sobra pro texto livre.
+# larguras da tabela Planilha SIGEF (cm) — Met.Posic./Tipo Limite/CNS
+# "justas" (só o necessário pro cabeçalho, pedido do usuário); Matrícula/
+# Reg.Imóveis ganhou um pouco mais (nome mais longo, cabeçalho em 2 linhas)
+# — ainda sobra folga na página; Descritivo ganha o espaço que sobra pro
+# texto livre.
 _LARGURAS_PLANILHA_CM = {
     "codigo": 2.0,
     "e_long": 2.2,
@@ -51,16 +53,19 @@ _LARGURAS_PLANILHA_CM = {
     "metodo_posicionamento": 1.6,
     "tipo_limite": 1.6,
     "cns": 0.9,
-    "matricula": 1.4,
+    "matricula": 1.8,
     "descritivo": 6.0,
 }
 
 # cabeçalho da Planilha SIGEF em 2 linhas só onde ficava apertado (Sigma
-# Long/Sigma Lat, pedido explícito) — o resto continua numa linha só.
+# Long/Sigma Lat, pedido explícito, e agora Matrícula/Reg.Imóveis depois de
+# renomeada — nome mais longo que o cabeçalho de uma linha só comportava) —
+# o resto continua numa linha só.
 _CABECALHO_PLANILHA = {
     **ROTULOS_OFICIAIS,
     "sigma_long": "Sigma\nLong",
     "sigma_lat": "Sigma\nLat",
+    "matricula": "Matrícula/\nReg.Imóveis",
 }
 
 _ROTULOS_IDENTIFICACAO = {
