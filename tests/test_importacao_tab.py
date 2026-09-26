@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QPushButton
 
 from core.parsing import parse_numero
@@ -23,7 +24,10 @@ def _dominios():
         return json.load(f)
 
 
-def _nova_aba(qtbot, dados, dados_utm_brutos=None, meridiano_inicial=-51.0, hemisferio_inicial="Sul", aplicar_na_parcela=None, remover_esta_aba=None):
+def _nova_aba(
+    qtbot, dados, dados_utm_brutos=None, dados_geodesica_original=None,
+    meridiano_inicial=-51.0, hemisferio_inicial="Sul", aplicar_na_parcela=None, remover_esta_aba=None,
+):
     dominios = _dominios()
     aplicadas = []
     removidas = []
@@ -31,6 +35,7 @@ def _nova_aba(qtbot, dados, dados_utm_brutos=None, meridiano_inicial=-51.0, hemi
         numero=1,
         dados=dados,
         dados_utm_brutos=dados_utm_brutos,
+        dados_geodesica_original=dados_geodesica_original,
         meridiano_inicial=meridiano_inicial,
         hemisferio_inicial=hemisferio_inicial,
         meridianos_disponiveis=dominios["meridianos_centrais_brasil"],
@@ -96,3 +101,37 @@ def test_recalcular_usa_meridiano_hemisferio_da_propria_aba_e_usar_propaga_corre
 
     _botao(aba, "Usar esta versão").click()
     assert aba._chamadas_aplicar[0].iloc[0]["n_lat"] == latitude_corrigida
+
+
+def test_mostra_colunas_de_referencia_do_utm_original(qtbot):
+    # pedido do usuário: manter visível o easting/northing importado, pra
+    # conferência, mesmo depois de já convertido pra grau decimal.
+    dados = pd.DataFrame({"codigo": ["AJ4-M-001"], "e_long": ["-48,5"], "n_lat": ["-27,5"]})
+    dados_utm_brutos = pd.DataFrame({"e_long": ["500000"], "n_lat": ["7000000"]})
+    aba = _nova_aba(qtbot, dados, dados_utm_brutos=dados_utm_brutos)
+
+    rotulos = [aba.tabela.horizontalHeaderItem(c).text() for c in range(aba.tabela.columnCount())]
+    assert "UTM E (original)" in rotulos
+    assert "UTM N (original)" in rotulos
+    col_e = rotulos.index("UTM E (original)")
+    assert aba.tabela.item(0, col_e).text() == "500000"
+    assert not aba.tabela.item(0, col_e).flags() & Qt.ItemFlag.ItemIsEditable
+
+
+def test_mostra_colunas_de_referencia_da_geodesica_original_nao_decimal(qtbot):
+    dados = pd.DataFrame({"codigo": ["AJ4-M-001"], "e_long": ["-48,5"], "n_lat": ["-27,5"]})
+    dados_geo_original = pd.DataFrame({"e_long": ["48 30 00 W"], "n_lat": ["27 30 00 S"]})
+    aba = _nova_aba(qtbot, dados, dados_geodesica_original=dados_geo_original)
+
+    rotulos = [aba.tabela.horizontalHeaderItem(c).text() for c in range(aba.tabela.columnCount())]
+    assert "E/Long (original)" in rotulos
+    assert "N/Lat (original)" in rotulos
+    col_n = rotulos.index("N/Lat (original)")
+    assert aba.tabela.item(0, col_n).text() == "27 30 00 S"
+
+
+def test_sem_referencia_nenhuma_nao_adiciona_coluna_extra(qtbot):
+    dados = pd.DataFrame({"codigo": ["AJ4-M-001"], "e_long": ["-48,5"], "n_lat": ["-27,5"]})
+    aba = _nova_aba(qtbot, dados)
+
+    assert aba.tabela.columnCount() == len(dados.columns)

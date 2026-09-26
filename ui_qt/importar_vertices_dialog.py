@@ -47,8 +47,10 @@ from importers.planilha import ler_planilha, nomes_das_abas
 
 _CAMPOS_NUMERICOS = {"sigma_long", "sigma_lat", "h", "sigma_h"}
 
+_FORMATO_GEO_DECIMAL = "Decimal (grau decimal, ex.: -27,508333)"
+
 _PARSERS_GEODESICA = {
-    "Decimal (grau decimal, ex.: -27,508333)": parse_numero,
+    _FORMATO_GEO_DECIMAL: parse_numero,
     "GMS — símbolos ou espaços (ex.: 27 30 30 S)": parse_coordenada,
     "Grau + minuto decimal, sem segundos (ex.: 27 30,500 S)": parse_geodesica_grau_minuto,
     "Compactado GG,MMSS (ex.: -27,3030)": parse_geodesica_compacta,
@@ -83,7 +85,7 @@ class ImportarVerticesDialog(QDialog):
         hemisferio_inicial: str,
         tema: dict,
         casas: dict,
-        criar_aba_importacao: Callable[[pd.DataFrame, pd.DataFrame | None, float, str], None],
+        criar_aba_importacao: Callable[[pd.DataFrame, pd.DataFrame | None, pd.DataFrame | None, float, str], None],
         formato: str = "texto",
         parent=None,
     ) -> None:
@@ -370,6 +372,16 @@ class ImportarVerticesDialog(QDialog):
         # que o hemisfério estava errado depois de criar a versão não tem
         # conserto: o dado de origem já teria sido descartado.
         dados_utm_brutos = dados[["e_long", "n_lat"]].copy() if (tem_coordenada and sistema == "UTM") else None
+        # mesma ideia do UTM acima, pro caso Geodésica-não-decimal (GMS, grau
+        # +minuto, compactado): sem guardar o texto original antes de
+        # converter pra grau decimal solto, ele se perdia — pedido do
+        # usuário pra manter a forma como veio do arquivo, só pra conferência.
+        formato_geo = self.combo_formato_geo.currentText()
+        dados_geodesica_original = (
+            dados[["e_long", "n_lat"]].copy()
+            if (tem_coordenada and sistema == "Geodésica" and formato_geo != _FORMATO_GEO_DECIMAL)
+            else None
+        )
         if tem_coordenada:
             try:
                 self._converter_coordenadas(dados, sistema)
@@ -383,7 +395,7 @@ class ImportarVerticesDialog(QDialog):
 
         meridiano = float(self.combo_meridiano.currentText()) if sistema == "UTM" else 0.0
         hemisferio = self.combo_hemisferio.currentText() if sistema == "UTM" else ""
-        self._criar_aba_importacao(dados, dados_utm_brutos, meridiano, hemisferio)
+        self._criar_aba_importacao(dados, dados_utm_brutos, dados_geodesica_original, meridiano, hemisferio)
         self.rotulo_status.setText(
             f"Nova aba de importação criada ({len(dados)} linha(s)) ao lado da Tabela de Perímetro."
         )

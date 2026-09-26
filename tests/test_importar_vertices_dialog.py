@@ -69,7 +69,7 @@ def test_criar_versao_geodesica_chama_callback_com_dados_convertidos(qtbot, tmp_
     _apontar_arquivo(monkeypatch, arquivo)
 
     chamadas = []
-    dialogo = _novo_dialogo(lambda dados, utm, mer, hem: chamadas.append((dados, utm, mer, hem)))
+    dialogo = _novo_dialogo(lambda dados, utm, geo, mer, hem: chamadas.append((dados, utm, geo, mer, hem)))
     qtbot.addWidget(dialogo)
     dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
     dialogo._escolher_arquivo()
@@ -82,9 +82,37 @@ def test_criar_versao_geodesica_chama_callback_com_dados_convertidos(qtbot, tmp_
     dialogo._criar_versao()
 
     assert len(chamadas) == 1
-    dados, dados_utm_brutos, _meridiano, _hemisferio = chamadas[0]
+    dados, dados_utm_brutos, geo_original, _meridiano, _hemisferio = chamadas[0]
     assert dados.iloc[0]["codigo"] == "AJ4-M-001"
     assert dados_utm_brutos is None  # não é UTM: não guarda easting/northing bruto
+    # pedido do usuário: formato GMS (não decimal) guarda o texto original,
+    # do jeito que veio do arquivo, pra conferência.
+    assert geo_original is not None
+    assert geo_original.iloc[0]["n_lat"] == "27 30 30 S"
+    assert geo_original.iloc[0]["e_long"] == "48 30 30 W"
+
+
+def test_criar_versao_decimal_nao_guarda_referencia_geodesica_original(qtbot, tmp_path, monkeypatch):
+    # já é decimal — não tem "forma original diferente" pra mostrar.
+    arquivo = tmp_path / "vertices.csv"
+    arquivo.write_text("codigo;lat;long\nAJ4-M-001;-27,5;-48,5\n", encoding="utf-8")
+    _apontar_arquivo(monkeypatch, arquivo)
+
+    chamadas = []
+    dialogo = _novo_dialogo(lambda dados, utm, geo, mer, hem: chamadas.append((dados, utm, geo, mer, hem)))
+    qtbot.addWidget(dialogo)
+    dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
+    dialogo._escolher_arquivo()
+    dialogo._combos_mapeamento["codigo"].setCurrentText("Código do vértice")
+    dialogo._combos_mapeamento["lat"].setCurrentText("N / Latitude")
+    dialogo._combos_mapeamento["long"].setCurrentText("E / Longitude")
+    dialogo.combo_sistema.setCurrentText("Geodésica")
+    dialogo.combo_formato_geo.setCurrentText("Decimal (grau decimal, ex.: -27,508333)")
+
+    dialogo._criar_versao()
+
+    _dados, _utm, geo_original, _mer, _hem = chamadas[0]
+    assert geo_original is None
 
 
 def test_criar_versao_grau_minuto_decimal_chama_callback_com_dados_convertidos(qtbot, tmp_path, monkeypatch):
@@ -93,7 +121,7 @@ def test_criar_versao_grau_minuto_decimal_chama_callback_com_dados_convertidos(q
     _apontar_arquivo(monkeypatch, arquivo)
 
     chamadas = []
-    dialogo = _novo_dialogo(lambda dados, utm, mer, hem: chamadas.append((dados, utm, mer, hem)))
+    dialogo = _novo_dialogo(lambda dados, utm, geo, mer, hem: chamadas.append((dados, utm, geo, mer, hem)))
     qtbot.addWidget(dialogo)
     dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
     dialogo._escolher_arquivo()
@@ -106,7 +134,7 @@ def test_criar_versao_grau_minuto_decimal_chama_callback_com_dados_convertidos(q
     dialogo._criar_versao()
 
     assert len(chamadas) == 1
-    dados, dados_utm_brutos, _meridiano, _hemisferio = chamadas[0]
+    dados, dados_utm_brutos, _geo_original, _meridiano, _hemisferio = chamadas[0]
     assert dados.iloc[0]["codigo"] == "AJ4-M-001"
     assert dados_utm_brutos is None
     assert dados.iloc[0]["n_lat"].startswith("-27,5")
@@ -119,7 +147,7 @@ def test_criar_versao_utm_repassa_easting_northing_bruto_e_meridiano_hemisferio_
     _apontar_arquivo(monkeypatch, arquivo)
 
     chamadas = []
-    dialogo = _novo_dialogo(lambda dados, utm, mer, hem: chamadas.append((dados, utm, mer, hem)), meridiano=-51.0, hemisferio="Sul")
+    dialogo = _novo_dialogo(lambda dados, utm, geo, mer, hem: chamadas.append((dados, utm, geo, mer, hem)), meridiano=-51.0, hemisferio="Sul")
     qtbot.addWidget(dialogo)
     dialogo.combo_separador.setCurrentText("Ponto e vírgula (;)")
     dialogo._escolher_arquivo()
@@ -131,10 +159,11 @@ def test_criar_versao_utm_repassa_easting_northing_bruto_e_meridiano_hemisferio_
     dialogo._criar_versao()
 
     assert len(chamadas) == 1
-    dados, dados_utm_brutos, meridiano, hemisferio = chamadas[0]
+    dados, dados_utm_brutos, geo_original, meridiano, hemisferio = chamadas[0]
     assert dados_utm_brutos is not None
     assert dados_utm_brutos.iloc[0]["e_long"] == "500000"
     assert dados_utm_brutos.iloc[0]["n_lat"] == "7000000"
+    assert geo_original is None  # UTM e Geodésica-original são mutuamente exclusivos
     assert meridiano == -51.0
     assert hemisferio == "Sul"
 
@@ -229,7 +258,7 @@ def test_criar_versao_a_partir_de_planilha_com_varias_abas(qtbot, tmp_path, monk
     monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(arquivo), "")))
 
     chamadas = []
-    dialogo = _novo_dialogo(lambda dados, utm, mer, hem: chamadas.append(dados), formato="planilha")
+    dialogo = _novo_dialogo(lambda dados, utm, geo, mer, hem: chamadas.append(dados), formato="planilha")
     qtbot.addWidget(dialogo)
     dialogo._escolher_arquivo()
     dialogo.combo_aba_planilha.setCurrentText("Vertices")

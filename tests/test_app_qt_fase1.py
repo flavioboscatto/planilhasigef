@@ -298,6 +298,32 @@ def test_menu_exportar_tem_as_quatro_opcoes(qtbot):
     assert any("TXT" in t for t in textos)
     assert any("XLSX" in t for t in textos)
     assert any("DOCX" in t for t in textos)
+    assert any("KML" in t for t in textos)
+    assert any("Shapefile" in t for t in textos)
+
+
+def test_menu_gerenciar_parcelas_tem_adicionar_e_remover_mas_nao_limpar(qtbot):
+    # Limpar Parcela mexe no CONTEÚDO da parcela (apaga a grade), não na
+    # aba em si — mora em Gerenciar Planilha (Parcela atual), pedido do
+    # usuário depois de ver os dois menus na prática.
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+
+    textos = [a.text() for a in _menu_por_titulo(janela, "Gerenciar Parcelas").actions() if a.text()]
+
+    assert any("Adicionar" in t for t in textos)
+    assert any("Remover" in t for t in textos)
+    assert not any("Limpar" in t for t in textos)
+
+
+def test_menu_gerenciar_planilha_tem_reorganizar_e_visualizar(qtbot):
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+
+    textos = [a.text() for a in _menu_por_titulo(janela, "Gerenciar Planilha (Parcela atual)").actions()]
+
+    assert any("Reorganizar" in t for t in textos)
+    assert any("Visualizar" in t for t in textos)
 
 
 def test_menu_gerenciar_planilha_chama_os_metodos_da_aba_atual(qtbot, monkeypatch):
@@ -312,8 +338,13 @@ def test_menu_gerenciar_planilha_chama_os_metodos_da_aba_atual(qtbot, monkeypatc
     aba.modelo_tabela.inserir_linha = lambda: chamadas.append(("inserir_linha",))
     aba._remover_linhas_selecionadas = lambda: chamadas.append(("remover",))
     aba._mover_linha_selecionada = lambda d: chamadas.append(("mover", d))
+    # Limpar Parcela abre um QMessageBox.question de verdade (modal) — sem
+    # substituir o método, o teste travaria esperando um clique que nunca
+    # vem (mesmo motivo de QMessageBox.warning acima); o comportamento real
+    # dela já tem teste dedicado (test_menu_gerenciar_planilha_limpar_...).
+    aba._limpar_parcela = lambda: chamadas.append(("limpar",))
 
-    menu = _menu_por_titulo(janela, "Gerenciar Planilha")
+    menu = _menu_por_titulo(janela, "Gerenciar Planilha (Parcela atual)")
     for acao in menu.actions():
         if acao.text():
             acao.trigger()
@@ -321,9 +352,68 @@ def test_menu_gerenciar_planilha_chama_os_metodos_da_aba_atual(qtbot, monkeypatc
     assert ("definir_coluna", "renumerar", True) in chamadas
     assert ("definir_coluna", "renumerar", False) in chamadas
     assert ("inserir_linha",) in chamadas
+    assert ("limpar",) in chamadas
     assert ("remover",) in chamadas
     assert ("mover", -1) in chamadas
     assert ("mover", 1) in chamadas
+
+
+def test_menu_visualizar_parcela_abre_o_dialogo_da_aba_atual(qtbot):
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    aba = janela._abas_perimetro()[0]
+
+    acao = next(a for a in _menu_por_titulo(janela, "Gerenciar Planilha (Parcela atual)").actions() if a.text() == "Visualizar parcela")
+    acao.trigger()
+
+    assert aba._dialogo_visualizacao is not None
+
+
+def test_menu_reorganizar_vertices_chama_o_metodo_da_aba_atual(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    aba = janela._abas_perimetro()[0]
+    chamadas = []
+    aba._reorganizar = lambda: chamadas.append(True)
+
+    acao = next(a for a in _menu_por_titulo(janela, "Gerenciar Planilha (Parcela atual)").actions() if a.text() == "Reorganizar vértices")
+    acao.trigger()
+
+    assert chamadas == [True]
+
+
+def test_menu_gerenciar_planilha_limpar_chama_limpar_parcela_da_aba_atual(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    aba = janela._abas_perimetro()[0]
+    col_codigo = aba.modelo_tabela.dataframe().columns.get_loc("codigo")
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "AJ4-M-001", Qt.ItemDataRole.EditRole)
+
+    acao = next(
+        a for a in _menu_por_titulo(janela, "Gerenciar Planilha (Parcela atual)").actions() if a.text() == "Limpar Parcela"
+    )
+    acao.trigger()
+
+    assert aba.modelo_tabela.dataframe().at[0, "codigo"] == ""
+
+
+def test_menu_gerenciar_parcelas_adicionar_e_remover_chamam_os_metodos_certos(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("Gleba Nova", True)))
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+
+    acao_add = next(a for a in _menu_por_titulo(janela, "Gerenciar Parcelas").actions() if a.text() == "Adicionar Parcela")
+    acao_add.trigger()
+
+    assert janela.abas.tabText(janela.abas.count() - 1) == "Gleba Nova"
 
 
 def test_menu_gerenciar_planilha_sem_aba_avisa_em_vez_de_quebrar(qtbot, monkeypatch):
@@ -347,7 +437,7 @@ def test_barra_de_ferramentas_tem_abrir_salvar_salvar_como_e_desfazer(qtbot):
     barras = janela.findChildren(QToolBar)
     assert len(barras) == 1
     textos = [a.text() for a in barras[0].actions() if a.text()]
-    assert textos == ["Abrir Projeto", "Salvar", "Salvar Como", "Desfazer"]
+    assert textos == ["Novo Projeto", "Abrir Projeto", "Salvar", "Salvar Como", "Desfazer"]
 
 
 def test_botao_desfazer_da_barra_desfaz_a_grade_da_aba_atual(qtbot):

@@ -54,9 +54,9 @@ arquivo traz só o que você precisa saber para não quebrar nada.
 
 ```
 app_qt.py                    entrypoint (QApplication/QMainWindow) — menus (Arquivo/
-                              Importar/Exportar/Gerenciar Planilha), toolbar de ícones
-                              (Abrir/Salvar/Salvar Como/Desfazer), abas (Identificação
-                              + parcelas)
+                              Importar/Exportar/Gerenciar Parcelas/Gerenciar Planilha
+                              (Parcela atual)), toolbar de ícones (Novo/Abrir/Salvar/
+                              Salvar Como/Desfazer), abas (Identificação + parcelas)
 core/template_loader.py      carrega o modelo local + sha256 (cache em memória)
 core/ods_writer.py           escrita e clonagem de abas de perímetro
 core/tabela_vertices.py      conversão DataFrame <-> Vertice (Pydantic); coluna
@@ -70,6 +70,11 @@ core/formatacao_vertices.py  formata vértices igual à planilha final (GMS, cas
 core/exportacao_txt.py       exporta a Tabela de Perímetro em TXT (colunas oficiais)
 core/exportacao_xlsx.py      exporta a Tabela de Perímetro em XLSX (mesmas colunas,
                               uma aba por parcela) — não confundir com core/ods_writer.py
+core/exportacao_kml.py       exporta o projeto em KML — um Folder (camada) por parcela,
+                              polígono do perímetro + um Placemark de ponto por vértice
+core/exportacao_shapefile.py exporta o projeto em Shapefile (pyshp) — pontos (vértices,
+                              todos os atributos da planilha + área SGL) e polígonos
+                              (perímetro por parcela), zipados; SIRGAS2000 (EPSG:4674)
 core/relatorio_docx.py       gera o Relatório em DOCX (identificação + por parcela:
                               resumo, importações, planilha em página paisagem)
 core/models.py               Pydantic: Identificacao, Perimetro, Vertice
@@ -91,7 +96,9 @@ ui_qt/visualizar_parcela_dialog.py  diálogo "Visualizar parcela" (V3): desenho
                               nativo Qt (QGraphicsView, zoom no scroll + pan por
                               arraste) dos vértices + polilinha + área SGL/INCRA
 ui_qt/perimetro_tab.py       aba de uma parcela: cabeçalho + grade + sub-abas de importação
-ui_qt/importacao_tab.py      sub-aba "Importação N" persistente dentro da parcela
+ui_qt/importacao_tab.py      sub-aba "Importação N" persistente dentro da parcela —
+                              colunas extras só-leitura com o valor original (UTM E/N
+                              ou texto geodésico não-decimal) antes da conversão
 ui_qt/importar_vertices_dialog.py  diálogo de importação de arquivo (TXT/CSV)
 ui_qt/remover_parcela_dialog.py  diálogo "Remover parcela" (V4): lista com caixa de
                               marcação, remove uma ou várias parcelas de uma vez
@@ -100,14 +107,19 @@ ui_qt/boas_vindas_dialog.py  tela de abertura (V4): Novo projeto/Abrir/Recentes,
 ui_qt/preferencias_qt.py     projetos recentes via QSettings (V4) — fora de core/
                               (não importa PySide6) e fora de config/ (não é domínio)
 ui_qt/identificacao_tab.py   aba Identificação
-ui_qt/renumeracao_panel.py   painel de numeração (faixa acima das abas) + botões de
-                              exportação (planilha/.txt/.docx) + Adicionar/Remover
-                              parcela (V4, expostos aqui, conectados em app_qt.py)
+ui_qt/renumeracao_panel.py   painel de numeração (faixa acima das abas) + botões em 3
+                              fileiras: 1) Importar + Adicionar/Remover parcela;
+                              2) Exportar KML/Shapefile (azul) + Limpar Parcela (rosa) +
+                              Desfazer; 3) Exportar SIGEF .ods/.txt/.xlsx/.docx (marrom).
+                              Adicionar/Remover/Limpar Parcela só expostos aqui,
+                              conectados em app_qt.py
 ui_qt/relatorio_qt.py        recolhe dados das abas ao vivo pro core/relatorio_docx.py
 ui_qt/projeto_qt.py          monta/aplica o projeto .sigefproj a partir da janela,
                               inclusive qual aba/sub-aba estava aberta ao salvar e o
                               nome customizado de cada aba de parcela (V4)
-ui_qt/tema_qt.py             cores do modelo oficial (config/theme_tokens.json) em Qt
+ui_qt/tema_qt.py             cores do modelo oficial (config/theme_tokens.json) em Qt;
+                              icone() (qtawesome) — ícones vetoriais dos botões, no lugar
+                              de emoji no texto (nomes "fa5s.xxx"/"mdi.xxx")
 ui_qt/estilo_qt.py           folha de estilo (QSS) global do app
 importers/delimitado.py      leitura de arquivo TXT/CSV pra importação
 importers/planilha.py        leitura de planilha XLS/XLSX/ODS pra importação (V5) —

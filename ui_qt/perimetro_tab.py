@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 
 from core.importacao import mesclar_por_codigo
 from core.models import Perimetro, Vertice
-from core.tabela_vertices import linha_para_vertice, preenchido, vertice_para_linha
+from core.tabela_vertices import linha_para_vertice, preenchido, tabela_vazia, vertice_para_linha
 from core.validators.geometria import reordena_norte_horario, verificar_autointersecao
 from ui_qt.importacao_tab import AbaImportacao
 from ui_qt.importar_vertices_dialog import ImportarVerticesDialog
@@ -155,11 +155,11 @@ class AbaPerimetro(QWidget):
         self.grade = TabelaVerticesView(self.modelo_tabela)
         layout_aba_tabela.addWidget(self.grade)
 
-        def _botao_grade(texto: str, destaque: bool = False) -> QPushButton:
+        def _botao_grade(texto: str, destaque: bool = False, icone: str | None = None) -> QPushButton:
             # destaque=True (negrito + borda mais grossa): pedido da
             # turma-teste pra ressaltar as ações mais usadas/importantes
             # (Renumerar, Reorganizar, Visualizar parcela) das demais.
-            botao = (botao_verde_destaque if destaque else botao_verde)(texto, tema)
+            botao = (botao_verde_destaque if destaque else botao_verde)(texto, tema, icone)
             botao.setMinimumWidth(150)
             botao.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             return botao
@@ -169,19 +169,19 @@ class AbaPerimetro(QWidget):
         # junto da grade que eles afetam) em cima de Adicionar/Remover/
         # Subir/Descer, que já moravam aqui.
         barra_numeracao = QHBoxLayout()
-        btn_marcar = _botao_grade("☑ Marcar todos")
+        btn_marcar = _botao_grade("Marcar todos", icone="fa5s.check-square")
         btn_marcar.setToolTip('Marca "Renumerar?" em toda a grade desta parcela.')
         btn_marcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", True))
-        btn_desmarcar = _botao_grade("☐ Desmarcar todos")
+        btn_desmarcar = _botao_grade("Desmarcar todos", icone="fa5.square")
         btn_desmarcar.setToolTip('Desmarca "Renumerar?" em toda a grade desta parcela.')
         btn_desmarcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", False))
-        btn_atualizar = _botao_grade("🔄 Atualizar código (só o Tipo)")
+        btn_atualizar = _botao_grade("Atualizar código (só o Tipo)", icone="fa5s.sync")
         btn_atualizar.setToolTip(
             "Já renumerou e corrigiu o Tipo de algum vértice na grade? Isto "
             "reescreve só o pedaço do Tipo no código, sem reatribuir número."
         )
         btn_atualizar.clicked.connect(self._atualizar_tipos)
-        btn_renumerar = _botao_grade("Renumerar vértices marcados", destaque=True)
+        btn_renumerar = _botao_grade("Renumerar vértices marcados", destaque=True, icone="fa5s.sort-numeric-down")
         btn_renumerar.setToolTip(
             'Só linhas com "Renumerar?" marcado recebem código novo, em todas '
             "as parcelas abertas — desmarque vértices que não são seus."
@@ -194,10 +194,10 @@ class AbaPerimetro(QWidget):
         layout_aba_tabela.addLayout(barra_numeracao)
 
         barra_linhas = QHBoxLayout()
-        btn_add_linha = _botao_grade("+ Adicionar vértice")
-        btn_remove_linha = _botao_grade("- Remover vértice(s) selecionado(s)")
-        btn_subir_linha = _botao_grade("↑ Subir linha selecionada")
-        btn_descer_linha = _botao_grade("↓ Descer linha selecionada")
+        btn_add_linha = _botao_grade("Adicionar vértice", icone="fa5s.plus-circle")
+        btn_remove_linha = _botao_grade("Remover vértice(s) selecionado(s)", icone="fa5s.minus-circle")
+        btn_subir_linha = _botao_grade("Subir linha selecionada", icone="fa5s.arrow-up")
+        btn_descer_linha = _botao_grade("Descer linha selecionada", icone="fa5s.arrow-down")
         btn_add_linha.clicked.connect(lambda: self.modelo_tabela.inserir_linha())
         btn_remove_linha.clicked.connect(self._remover_linhas_selecionadas)
         btn_subir_linha.clicked.connect(lambda: self._mover_linha_selecionada(-1))
@@ -214,12 +214,12 @@ class AbaPerimetro(QWidget):
         # (agia só na aba "atual" por indireção) — desceu pra cá porque já
         # nasce dentro da aba que afeta, sem precisar dessa indireção.
         barra_visualizacao = QHBoxLayout()
-        btn_reorganizar = _botao_grade("↻ Reorganizar", destaque=True)
+        btn_reorganizar = _botao_grade("Reorganizar vértices", destaque=True, icone="fa5s.sync-alt")
         btn_reorganizar.setToolTip("Reorganiza a grade desta parcela (mais ao norte, sentido horário).")
         btn_reorganizar.clicked.connect(self._reorganizar)
         barra_visualizacao.addWidget(btn_reorganizar)
 
-        btn_visualizar = _botao_grade("🔍 Visualizar parcela", destaque=True)
+        btn_visualizar = _botao_grade("Visualizar parcela", destaque=True, icone="fa5s.search")
         btn_visualizar.setToolTip(
             "Desenha os vértices e o perímetro fechado desta parcela, avisando se "
             "algum lado se cruza com outro."
@@ -318,6 +318,23 @@ class AbaPerimetro(QWidget):
                 f"Atenção: o perímetro reorganizado tem lados que se cruzam.\n\n{mensagens}",
             )
 
+    def _limpar_parcela(self) -> None:
+        # apaga só a grade de vértices (Tabela de Perímetro) — cabeçalho
+        # (Denominação/Parcela número/Lado/etc.) e sub-abas de importação
+        # continuam intactos, já que "limpar" aqui é sobre o conteúdo da
+        # planilha, não sobre a identidade da parcela. Confirmação porque é
+        # destrutivo (ainda que desfazível com Ctrl+Z, via
+        # modelo_tabela.substituir -> _guardar_para_desfazer).
+        resposta = QMessageBox.question(
+            self, "Limpar parcela",
+            "Isso apaga todos os vértices da Tabela de Perímetro desta parcela "
+            "(dá pra desfazer com Ctrl+Z logo em seguida). Continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if resposta != QMessageBox.StandardButton.Yes:
+            return
+        self.modelo_tabela.substituir(tabela_vazia())
+
     def _vertices_preenchidos(self) -> list[Vertice]:
         df = self.modelo_tabela.dataframe()
         return [linha_para_vertice(linha) for _, linha in df.iterrows() if preenchido(linha["codigo"])]
@@ -387,6 +404,7 @@ class AbaPerimetro(QWidget):
         self,
         dados: pd.DataFrame,
         dados_utm_brutos: pd.DataFrame | None,
+        dados_geodesica_original: pd.DataFrame | None,
         meridiano: float,
         hemisferio: str,
     ) -> None:
@@ -397,6 +415,7 @@ class AbaPerimetro(QWidget):
             numero=numero,
             dados=dados,
             dados_utm_brutos=dados_utm_brutos,
+            dados_geodesica_original=dados_geodesica_original,
             meridiano_inicial=meridiano,
             hemisferio_inicial=hemisferio,
             meridianos_disponiveis=self._dominios["meridianos_centrais_brasil"],

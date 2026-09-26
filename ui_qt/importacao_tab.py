@@ -14,12 +14,18 @@ Meridiano Central/Hemisfério, então dá pra reconferir e recalcular
 geodésica a qualquer momento sem reimportar o arquivo — inclusive depois
 de já ter mesclado na Tabela de Perímetro: "Usar esta versão" pode ser
 clicado de novo, e mescla por código sobrescreve os valores anteriores.
+
+Também mostra (só leitura, colunas extras no fim) o valor ORIGINAL antes da
+conversão pra grau decimal — easting/northing (UTM) ou o texto no formato
+que veio do arquivo (GMS/grau+minuto/compactado) — pedido do usuário pra
+conferência visual sem precisar reimportar.
 """
 from __future__ import annotations
 
 from typing import Callable
 
 import pandas as pd
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -43,6 +49,7 @@ class AbaImportacao(QWidget):
         numero: int,
         dados: pd.DataFrame,
         dados_utm_brutos: pd.DataFrame | None,
+        dados_geodesica_original: pd.DataFrame | None,
         meridiano_inicial: float,
         hemisferio_inicial: str,
         meridianos_disponiveis: list[int],
@@ -53,14 +60,29 @@ class AbaImportacao(QWidget):
         parent=None,
     ) -> None:
         super().__init__(parent)
-        # posição na linha == posição em dados_utm_brutos: esta grade nunca
-        # reordena/insere/remove linha (isso só existe na Tabela de
-        # Perímetro), então o índice sempre bate — sem precisar de coluna
-        # interna nem dicionário à parte pra religar um com o outro.
+        # posição na linha == posição em dados_utm_brutos/dados_geodesica_
+        # original: esta grade nunca reordena/insere/remove linha (isso só
+        # existe na Tabela de Perímetro), então o índice sempre bate — sem
+        # precisar de coluna interna nem dicionário à parte pra religar um
+        # com o outro. Os dois nunca vêm preenchidos ao mesmo tempo (UTM e
+        # Geodésica são sistemas diferentes na mesma importação).
         self._dados_utm_brutos = dados_utm_brutos
+        self._dados_geodesica_original = dados_geodesica_original
         self._aplicar_na_parcela = aplicar_na_parcela
         self._remover_esta_aba = remover_esta_aba
         self._colunas = list(dados.columns)
+
+        # colunas extras, só leitura, com o valor ANTES da conversão pra
+        # grau decimal — pedido do usuário: útil pra conferir sem precisar
+        # reimportar o arquivo.
+        colunas_referencia: list[tuple[str, str]] = []
+        dados_referencia = None
+        if dados_utm_brutos is not None:
+            dados_referencia = dados_utm_brutos
+            colunas_referencia = [("e_long", "UTM E (original)"), ("n_lat", "UTM N (original)")]
+        elif dados_geodesica_original is not None:
+            dados_referencia = dados_geodesica_original
+            colunas_referencia = [("e_long", "E/Long (original)"), ("n_lat", "N/Lat (original)")]
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(
@@ -69,12 +91,19 @@ class AbaImportacao(QWidget):
             "pra levar pra Tabela de Perímetro."
         ))
 
-        self.tabela = QTableWidget(len(dados), len(self._colunas))
-        self.tabela.setHorizontalHeaderLabels([_ROTULOS.get(c, c) for c in self._colunas])
+        self.tabela = QTableWidget(len(dados), len(self._colunas) + len(colunas_referencia))
+        self.tabela.setHorizontalHeaderLabels(
+            [_ROTULOS.get(c, c) for c in self._colunas] + [rotulo for _, rotulo in colunas_referencia]
+        )
         for linha in range(len(dados)):
             for coluna, campo in enumerate(self._colunas):
                 valor = dados.iat[linha, coluna]
                 self.tabela.setItem(linha, coluna, QTableWidgetItem("" if pd.isna(valor) else str(valor)))
+            for deslocamento, (campo_ref, _) in enumerate(colunas_referencia):
+                valor = dados_referencia.iat[linha, list(dados_referencia.columns).index(campo_ref)]
+                item = QTableWidgetItem("" if pd.isna(valor) else str(valor))
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.tabela.setItem(linha, len(self._colunas) + deslocamento, item)
         layout.addWidget(self.tabela)
 
         linha_acoes = QHBoxLayout()
@@ -91,7 +120,7 @@ class AbaImportacao(QWidget):
             self.combo_hemisferio.setCurrentText(hemisferio_inicial)
             linha_acoes.addWidget(self.combo_hemisferio)
 
-            btn_recalcular = botao_verde("🔄 Recalcular geodésica", tema)
+            btn_recalcular = botao_verde("Recalcular geodésica", tema, icone_nome="fa5s.sync")
             btn_recalcular.setToolTip(
                 "Reconverte E/Long e N/Lat a partir do easting/northing original "
                 "desta importação, com o Meridiano/Hemisfério acima — sem "

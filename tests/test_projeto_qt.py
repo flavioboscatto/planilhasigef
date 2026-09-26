@@ -76,7 +76,7 @@ def test_reabrir_projeto_volta_para_a_subaba_que_estava_aberta_ao_salvar(qtbot):
     qtbot.addWidget(janela)
     aba = janela._abas_perimetro()[0]
     dados_importados = pd.DataFrame({"codigo": ["A"], "e_long": ["-48,00"], "n_lat": ["-9,00"]})
-    aba._criar_aba_importacao(dados_importados, None, -51.0, "Sul")
+    aba._criar_aba_importacao(dados_importados, None, None, -51.0, "Sul")
     assert aba.subabas.currentIndex() == 1  # foco foi pra Importação 1 (comportamento normal)
 
     aba.subabas.setCurrentIndex(0)  # usuário volta pra Tabela de Perímetro antes de salvar
@@ -170,11 +170,11 @@ def test_round_trip_preserva_abas_de_importacao(qtbot):
     aba = janela._abas_perimetro()[0]
 
     dados_geo = pd.DataFrame({"codigo": ["AJ4-M-001"], "e_long": ["-48,50"], "n_lat": ["-27,50"]})
-    aba._criar_aba_importacao(dados_geo, None, 0.0, "")
+    aba._criar_aba_importacao(dados_geo, None, None, 0.0, "")
 
     dados_utm = pd.DataFrame({"codigo": ["AJ4-M-002"], "e_long": ["-48,60"], "n_lat": ["-27,60"]})
     dados_utm_brutos = pd.DataFrame({"e_long": ["500000"], "n_lat": ["7000000"]})
-    aba._criar_aba_importacao(dados_utm, dados_utm_brutos, -51.0, "Sul")
+    aba._criar_aba_importacao(dados_utm, dados_utm_brutos, None, -51.0, "Sul")
 
     dados = desserializar(serializar(montar_projeto(janela)))
 
@@ -230,7 +230,7 @@ def test_round_trip_preserva_numeracao_mesmo_com_importacao_na_parcela(qtbot):
     janela.painel_numeracao._campos_numero["M"].setText("211")
     aba = janela._abas_perimetro()[0]
     dados_importados = pd.DataFrame({"codigo": ["6"], "e_long": ["-48,50"], "n_lat": ["-27,50"]})
-    aba._criar_aba_importacao(dados_importados, None, -51.0, "Sul")
+    aba._criar_aba_importacao(dados_importados, None, None, -51.0, "Sul")
 
     dados = desserializar(serializar(montar_projeto(janela)))
 

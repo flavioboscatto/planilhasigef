@@ -156,8 +156,11 @@ def test_painel_expoe_botoes_adicionar_e_remover_parcela(qtbot):
     # expõe os botões — quem conecta o clique é ela.
     painel = _novo_painel(lambda: [], qtbot=qtbot)
 
-    assert painel.btn_adicionar_parcela.text() == "+ Adicionar parcela"
-    assert painel.btn_remover_parcela.text() == "- Remover parcela..."
+    # sem "+"/"-" no texto desde que ganharam ícone qtawesome (V8)
+    assert painel.btn_adicionar_parcela.text() == "Adicionar parcela"
+    assert painel.btn_remover_parcela.text() == "Remover parcela..."
+    assert not painel.btn_adicionar_parcela.icon().isNull()
+    assert not painel.btn_remover_parcela.icon().isNull()
 
 
 def test_desfazer_atual_volta_estado_da_aba_certa(qtbot, monkeypatch):

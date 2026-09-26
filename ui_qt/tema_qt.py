@@ -15,7 +15,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtGui import QColor, QFont
+import qtawesome as qta
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QColor, QFont, QIcon
 from PySide6.QtWidgets import QLabel, QPushButton
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "theme_tokens.json"
@@ -51,6 +53,21 @@ def carregar_tema() -> dict[str, Papel]:
     return papeis
 
 
+def icone(nome: str, cor: str = "#2f2f2f") -> QIcon:
+    """Ícone vetorial (Font Awesome/Material Design) via qtawesome, pedido
+    do usuário no lugar dos emojis usados até aqui — mais "profissional" e
+    com cor consistente por botão (`nome` no formato "fa5s.xxx"/"mdi.xxx",
+    ver https://pictogrammers.com/library/mdi/ e a lista do Font Awesome 5)."""
+    return qta.icon(nome, color=cor)
+
+
+def _aplicar_icone(botao: QPushButton, nome: str | None, cor: str) -> None:
+    if nome is None:
+        return
+    botao.setIcon(icone(nome, cor))
+    botao.setIconSize(QSize(14, 14))
+
+
 def titulo_secao(texto: str, papel: Papel) -> QLabel:
     """Rótulo de seção colorido, igual ao título de seção da planilha
     original (mesma cor de fundo/texto/negrito do estilo de célula real) —
@@ -67,14 +84,17 @@ def titulo_secao(texto: str, papel: Papel) -> QLabel:
     return rotulo
 
 
-def botao_verde(texto: str, tema: dict[str, Papel]) -> QPushButton:
+def botao_verde(texto: str, tema: dict[str, Papel], icone_nome: str | None = None) -> QPushButton:
     """Botão de ação em verde claro (mesma cor de "perimetro_entrada" no
     modelo oficial) — pedido do usuário pra diferenciar visualmente as
     ações de aba/painel do resto do app. Compartilhado entre
     ui_qt/perimetro_tab.py, ui_qt/importacao_tab.py e
-    ui_qt/renumeracao_panel.py, então mora aqui, não num arquivo só."""
+    ui_qt/renumeracao_panel.py, então mora aqui, não num arquivo só.
+    `icone_nome`: ícone qtawesome opcional (ex.: "fa5s.check-square"),
+    trocando o emoji que o texto do botão usava antes."""
     cor = tema["perimetro_entrada"].fundo
     botao = QPushButton(texto)
+    _aplicar_icone(botao, icone_nome, "#2f2f2f")
     botao.setStyleSheet(
         f"QPushButton {{ background: {cor.name()}; border: 1px solid {cor.darker(140).name()}; }}"
         f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
@@ -83,13 +103,14 @@ def botao_verde(texto: str, tema: dict[str, Papel]) -> QPushButton:
     return botao
 
 
-def botao_verde_destaque(texto: str, tema: dict[str, Papel]) -> QPushButton:
+def botao_verde_destaque(texto: str, tema: dict[str, Papel], icone_nome: str | None = None) -> QPushButton:
     """Mesma cor de botao_verde, mas em negrito e com borda mais grossa —
     pedido do usuário (turma-teste) pra destacar as ações mais importantes/
     usadas com frequência (Importar, Renumerar, Reorganizar, Visualizar
     parcela) das demais ações verdes comuns."""
     cor = tema["perimetro_entrada"].fundo
     botao = QPushButton(texto)
+    _aplicar_icone(botao, icone_nome, "#2f2f2f")
     botao.setStyleSheet(
         f"QPushButton {{ background: {cor.name()}; border: 2px solid {cor.darker(140).name()}; font-weight: bold; }}"
         f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
@@ -98,7 +119,7 @@ def botao_verde_destaque(texto: str, tema: dict[str, Papel]) -> QPushButton:
     return botao
 
 
-def botao_marrom(texto: str, tema: dict[str, Papel]) -> QPushButton:
+def botao_marrom(texto: str, tema: dict[str, Papel], icone_nome: str | None = None) -> QPushButton:
     """Botão de exportação (planilha/TXT/relatório) no mesmo marrom escuro
     de "servico_titulo" — a faixa "Identificação do Serviço de
     Georreferenciamento" na aba Identificação, pedido explícito do usuário
@@ -107,9 +128,43 @@ def botao_marrom(texto: str, tema: dict[str, Papel]) -> QPushButton:
     mexe só no que está na tela)."""
     cor = tema["servico_titulo"].fundo
     botao = QPushButton(texto)
+    _aplicar_icone(botao, icone_nome, "white")
     botao.setStyleSheet(
         f"QPushButton {{ background: {cor.name()}; color: white; border: 1px solid {cor.darker(140).name()}; }}"
         f"QPushButton:hover {{ background: {cor.lighter(115).name()}; }}"
+        f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
+    )
+    return botao
+
+
+def botao_azul(texto: str, tema: dict[str, Papel], icone_nome: str | None = None) -> QPushButton:
+    """Botão de exportação georreferenciada (KML/Shapefile), pedido do
+    usuário em azul — mesmo azul-claro de "detentor_entrada" (campo de
+    entrada da faixa "Identificação do Detentor"), texto escuro (fundo
+    claro). Era o azul escuro de "detentor_titulo" antes; o usuário achou
+    forte demais, trocado pro mesmo tom claro que botao_verde/botao_perigo
+    já usam, só que azul."""
+    cor = tema["detentor_entrada"].fundo
+    botao = QPushButton(texto)
+    _aplicar_icone(botao, icone_nome, "#2f2f2f")
+    botao.setStyleSheet(
+        f"QPushButton {{ background: {cor.name()}; border: 1px solid {cor.darker(140).name()}; }}"
+        f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
+        f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
+    )
+    return botao
+
+
+def botao_perigo(texto: str, tema: dict[str, Papel], icone_nome: str | None = None) -> QPushButton:
+    """Botão de ação destrutiva (Limpar Parcela), pedido do usuário em
+    rosa/vermelho claro — mesma cor de "servico_entrada", texto escuro
+    (fundo claro)."""
+    cor = tema["servico_entrada"].fundo
+    botao = QPushButton(texto)
+    _aplicar_icone(botao, icone_nome, "#2f2f2f")
+    botao.setStyleSheet(
+        f"QPushButton {{ background: {cor.name()}; border: 1px solid {cor.darker(140).name()}; }}"
+        f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
         f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
     )
     return botao

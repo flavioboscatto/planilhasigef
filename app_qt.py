@@ -23,14 +23,13 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QSplashScreen,
-    QStyle,
     QTabWidget,
     QToolBar,
     QVBoxLayout,
     QWidget,
 )
 
-from core import exportacao_txt, exportacao_xlsx, ods_writer, relatorio_docx
+from core import exportacao_kml, exportacao_shapefile, exportacao_txt, exportacao_xlsx, ods_writer, relatorio_docx
 from core.projeto import ProjetoInvalidoError, desserializar, serializar
 from core.template_loader import load_template
 from ui_qt.boas_vindas_dialog import BoasVindasDialog
@@ -42,7 +41,7 @@ from ui_qt.projeto_qt import aplicar_projeto, montar_projeto
 from ui_qt.relatorio_qt import montar_dados_relatorio
 from ui_qt.remover_parcela_dialog import RemoverParcelaDialog
 from ui_qt.renumeracao_panel import PainelNumeracao
-from ui_qt.tema_qt import carregar_tema
+from ui_qt.tema_qt import carregar_tema, icone
 
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
 ICONE_APP = Path(__file__).resolve().parent / "assets" / "icone_app.ico"
@@ -84,9 +83,11 @@ class JanelaPrincipal(QMainWindow):
         self.painel_numeracao.btn_exportar_txt.clicked.connect(self._exportar_txt)
         self.painel_numeracao.btn_exportar_xlsx.clicked.connect(self._exportar_xlsx)
         self.painel_numeracao.btn_gerar_relatorio.clicked.connect(self._gerar_relatorio)
+        self.painel_numeracao.btn_exportar_kml.clicked.connect(self._exportar_kml)
+        self.painel_numeracao.btn_exportar_shapefile.clicked.connect(self._exportar_shapefile)
         # Adicionar/Remover parcela: quem sabe montar/desmontar aba é a
         # janela (tem self.abas), o painel só expõe o botão — mesmo padrão
-        # dos 3 acima.
+        # dos de exportação acima.
         self.painel_numeracao.btn_adicionar_parcela.clicked.connect(self._adicionar_aba_parcela_com_prompt)
         self.painel_numeracao.btn_remover_parcela.clicked.connect(self._abrir_dialogo_remover_parcela)
 
@@ -161,14 +162,32 @@ class JanelaPrincipal(QMainWindow):
         acao_exportar_xlsx.triggered.connect(self._exportar_xlsx)
         acao_relatorio = menu_exportar.addAction("Relatório em DOCX...")
         acao_relatorio.triggered.connect(self._gerar_relatorio)
+        menu_exportar.addSeparator()
+        acao_exportar_kml = menu_exportar.addAction("Projeto em KML...")
+        acao_exportar_kml.triggered.connect(self._exportar_kml)
+        acao_exportar_shapefile = menu_exportar.addAction("Shapefile...")
+        acao_exportar_shapefile.triggered.connect(self._exportar_shapefile)
 
-        # Gerenciar Planilha: as mesmas ações que já são botão na parte de
-        # baixo da aba Perímetro (ui_qt/perimetro_tab.py) — os botões
-        # continuam existindo, isto é só um segundo caminho pro mesmo
-        # clique, agindo na parcela ABERTA agora (a única exceção é
+        # Gerenciar Parcelas: ações sobre a ABA em si (criar/apagar) — antes
+        # de Gerenciar Planilha (que age no CONTEÚDO da parcela já aberta),
+        # pedido do usuário. Limpar Parcela mexe no CONTEÚDO (apaga a
+        # grade), não na aba em si, então mora no outro menu — mesmo botão
+        # (rosa, ui_qt/renumeracao_panel.py), só o menu mudou de lugar.
+        menu_gerenciar_parcelas = self.menuBar().addMenu("&Gerenciar Parcelas")
+        acao_adicionar_parcela = menu_gerenciar_parcelas.addAction("Adicionar Parcela")
+        acao_adicionar_parcela.triggered.connect(self._adicionar_aba_parcela_com_prompt)
+        acao_remover_parcela = menu_gerenciar_parcelas.addAction("Remover Parcela...")
+        acao_remover_parcela.triggered.connect(self._abrir_dialogo_remover_parcela)
+
+        # Gerenciar Planilha (Parcela atual): as mesmas ações que já são
+        # botão na parte de baixo da aba Perímetro (ui_qt/perimetro_tab.py)
+        # — os botões continuam existindo, isto é só um segundo caminho pro
+        # mesmo clique, agindo na parcela ABERTA agora (a única exceção é
         # Atualizar/Renumerar, que já agem em todas as parcelas mesmo como
-        # botão, ver ui_qt/renumeracao_panel.py).
-        menu_gerenciar = self.menuBar().addMenu("&Gerenciar Planilha")
+        # botão, ver ui_qt/renumeracao_panel.py). "(Parcela atual)" no nome
+        # do menu deixa isso explícito, pra não confundir com Gerenciar
+        # Parcelas (que mexe na lista de abas, não no conteúdo de uma).
+        menu_gerenciar = self.menuBar().addMenu("&Gerenciar Planilha (Parcela atual)")
         acao_marcar = menu_gerenciar.addAction("Marcar todos")
         acao_marcar.triggered.connect(self._marcar_todos_atual)
         acao_desmarcar = menu_gerenciar.addAction("Desmarcar todos")
@@ -180,6 +199,8 @@ class JanelaPrincipal(QMainWindow):
         acao_atualizar_codigo.triggered.connect(self.painel_numeracao._atualizar_tipos)
         acao_renumerar = menu_gerenciar.addAction("Renumerar vértices marcados")
         acao_renumerar.triggered.connect(self.painel_numeracao._renumerar)
+        acao_reorganizar = menu_gerenciar.addAction("Reorganizar vértices")
+        acao_reorganizar.triggered.connect(self._reorganizar_atual)
 
         menu_gerenciar.addSeparator()
 
@@ -192,35 +213,45 @@ class JanelaPrincipal(QMainWindow):
         acao_descer = menu_gerenciar.addAction("Descer linha selecionada")
         acao_descer.triggered.connect(self._descer_linha_atual)
 
+        menu_gerenciar.addSeparator()
+
+        acao_visualizar = menu_gerenciar.addAction("Visualizar parcela")
+        acao_visualizar.triggered.connect(self._visualizar_atual)
+
+        menu_gerenciar.addSeparator()
+
+        # separada por último — ação destrutiva (apaga a grade inteira,
+        # com confirmação); mesmo botão rosa do painel de cima.
+        acao_limpar_parcela = menu_gerenciar.addAction("Limpar Parcela")
+        acao_limpar_parcela.triggered.connect(self.painel_numeracao._limpar_parcela_atual)
+
     def _criar_barra_ferramentas(self) -> None:
-        # ícones clássicos do próprio Qt (QStyle) — não depende de nenhum
-        # arquivo de ícone novo nem de tema de ícones do sistema (Windows
-        # não tem um por padrão, ao contrário do Linux — QIcon.fromTheme
-        # sairia em branco aqui). Fica na área de toolbar do QMainWindow,
-        # que já nasce abaixo da barra de menu sozinha, sem posicionamento
-        # manual.
+        # ícones vetoriais qtawesome (Font Awesome/Material Design) — pedido
+        # do usuário no lugar dos ícones nativos do Qt (QStyle), que
+        # pareciam datados. Fica na área de toolbar do QMainWindow, que já
+        # nasce abaixo da barra de menu sozinha, sem posicionamento manual.
         barra = QToolBar("Principal")
         barra.setMovable(False)
         barra.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(barra)
-        estilo = self.style()
 
-        acao_abrir = barra.addAction(estilo.standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton), "Abrir Projeto")
+        acao_novo = barra.addAction(icone("mdi.file-plus-outline"), "Novo Projeto")
+        acao_novo.triggered.connect(self._novo_projeto)
+
+        acao_abrir = barra.addAction(icone("fa5s.folder-open"), "Abrir Projeto")
         acao_abrir.triggered.connect(self._abrir_projeto)
 
-        acao_salvar = barra.addAction(estilo.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton), "Salvar")
+        acao_salvar = barra.addAction(icone("fa5s.save"), "Salvar")
         acao_salvar.triggered.connect(self._salvar_projeto)
 
-        acao_salvar_como = barra.addAction(estilo.standardIcon(QStyle.StandardPixmap.SP_DriveFDIcon), "Salvar Como")
+        acao_salvar_como = barra.addAction(icone("mdi.content-save-edit-outline"), "Salvar Como")
         acao_salvar_como.triggered.connect(self._salvar_projeto_como)
 
         barra.addSeparator()
 
-        # Qt não tem um ícone padrão de "desfazer" — SP_ArrowBack (seta pra
-        # esquerda) é a aproximação visual mais comum pra essa ação em
-        # barras de ferramentas clássicas. O botão de baixo (ui_qt/
-        # renumeracao_panel.py) continua existindo — pedido do usuário.
-        acao_desfazer = barra.addAction(estilo.standardIcon(QStyle.StandardPixmap.SP_ArrowBack), "Desfazer")
+        # botão de baixo (ui_qt/renumeracao_panel.py) continua existindo —
+        # pedido do usuário.
+        acao_desfazer = barra.addAction(icone("fa5s.undo"), "Desfazer")
         acao_desfazer.setToolTip(
             "Volta a grade da parcela aberta agora pro estado de antes da última mudança (Ctrl+Z)."
         )
@@ -261,6 +292,16 @@ class JanelaPrincipal(QMainWindow):
         aba = self._exigir_aba_perimetro_atual()
         if aba is not None:
             aba._mover_linha_selecionada(1)
+
+    def _reorganizar_atual(self) -> None:
+        aba = self._exigir_aba_perimetro_atual()
+        if aba is not None:
+            aba._reorganizar()
+
+    def _visualizar_atual(self) -> None:
+        aba = self._exigir_aba_perimetro_atual()
+        if aba is not None:
+            aba._abrir_visualizacao()
 
     def _adicionar_aba_identificacao(self) -> None:
         self.aba_identificacao = AbaIdentificacao(self.dominios, self.municipios, self.tema)
@@ -398,6 +439,42 @@ class JanelaPrincipal(QMainWindow):
             QMessageBox.critical(self, "Exportar XLSX", f"Não consegui salvar em {caminho}: {exc}")
             return
         QMessageBox.information(self, "Exportar XLSX", f"Tabela exportada em {caminho}.")
+
+    def _exportar_kml(self) -> None:
+        identificacao = self.aba_identificacao.modelo()
+        perimetros = [aba.modelo() for aba in self._abas_perimetro()]
+        saida = exportacao_kml.gerar_kml(identificacao, perimetros)
+
+        caminho, _ = QFileDialog.getSaveFileName(
+            self, "Exportar Projeto em KML", "projeto_sigef.kml", "KML (*.kml);;Todos os arquivos (*.*)"
+        )
+        if not caminho:
+            return
+        try:
+            Path(caminho).write_bytes(saida)
+        except OSError as exc:
+            QMessageBox.critical(self, "Exportar KML", f"Não consegui salvar em {caminho}: {exc}")
+            return
+        QMessageBox.information(self, "Exportar KML", f"Projeto exportado em {caminho}.")
+
+    def _exportar_shapefile(self) -> None:
+        perimetros = [aba.modelo() for aba in self._abas_perimetro()]
+        saida = exportacao_shapefile.gerar_shapefile_zip(perimetros)
+
+        caminho, _ = QFileDialog.getSaveFileName(
+            self, "Exportar Shapefile", "projeto_sigef_shapefile.zip", "ZIP (*.zip);;Todos os arquivos (*.*)"
+        )
+        if not caminho:
+            return
+        try:
+            Path(caminho).write_bytes(saida)
+        except OSError as exc:
+            QMessageBox.critical(self, "Exportar Shapefile", f"Não consegui salvar em {caminho}: {exc}")
+            return
+        QMessageBox.information(
+            self, "Exportar Shapefile",
+            f"Shapefile exportado em {caminho} (zip com pontos e polígonos, SIRGAS2000).",
+        )
 
     def _gerar_relatorio(self) -> None:
         identificacao = self.aba_identificacao.modelo()

@@ -25,10 +25,14 @@ def _serializar_importacoes(aba) -> list[dict]:
     for i in range(1, aba.subabas.count()):
         sub = aba.subabas.widget(i)
         dados_utm_brutos = sub._dados_utm_brutos
+        dados_geodesica_original = sub._dados_geodesica_original
         importacoes.append({
             "colunas": sub._colunas,
             "linhas": sub._dataframe_atual().to_dict(orient="records"),
             "dados_utm_brutos": dados_utm_brutos.to_dict(orient="records") if dados_utm_brutos is not None else None,
+            "dados_geodesica_original": (
+                dados_geodesica_original.to_dict(orient="records") if dados_geodesica_original is not None else None
+            ),
             "meridiano": float(sub.combo_meridiano.currentText()) if hasattr(sub, "combo_meridiano") else None,
             "hemisferio": sub.combo_hemisferio.currentText() if hasattr(sub, "combo_hemisferio") else None,
         })
@@ -124,8 +128,12 @@ def aplicar_projeto(janela, dados: dict) -> None:
             dados_importados = pd.DataFrame(importacao.get("linhas", []), columns=importacao.get("colunas", []))
             utm_brutos = importacao.get("dados_utm_brutos")
             dados_utm_brutos = pd.DataFrame(utm_brutos, columns=["e_long", "n_lat"]) if utm_brutos else None
+            # ausente = arquivo salvo antes do V6 (colunas de referência do
+            # formato original na importação) — mantém compatível.
+            geo_original = importacao.get("dados_geodesica_original")
+            dados_geodesica_original = pd.DataFrame(geo_original, columns=["e_long", "n_lat"]) if geo_original else None
             aba._criar_aba_importacao(
-                dados_importados, dados_utm_brutos,
+                dados_importados, dados_utm_brutos, dados_geodesica_original,
                 importacao.get("meridiano") or 0.0, importacao.get("hemisferio") or "",
             )
 

@@ -110,3 +110,48 @@ def test_gerar_relatorio_produz_docx_com_identificacao_e_planilha(qtbot, tmp_pat
     textos = [p.text for p in doc.paragraphs]
     assert "Identificação" in textos
     assert any("AJ4-M-001" in "".join(c.text for c in linha.cells) for tabela in doc.tables for linha in tabela.rows)
+
+
+def test_exportar_kml_produz_arquivo_com_o_vertice(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
+
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    aba = janela._abas_perimetro()[0]
+    colunas = aba.modelo_tabela.dataframe().columns
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, colunas.get_loc("codigo")), "AJ4-M-001", Qt.ItemDataRole.EditRole)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, colunas.get_loc("e_long")), "-48,50", Qt.ItemDataRole.EditRole)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, colunas.get_loc("n_lat")), "-27,50", Qt.ItemDataRole.EditRole)
+
+    caminho = tmp_path / "saida.kml"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(caminho), "")))
+
+    janela._exportar_kml()
+
+    assert caminho.exists()
+    assert "AJ4-M-001" in caminho.read_text(encoding="utf-8")
+
+
+def test_exportar_shapefile_produz_zip_com_os_8_arquivos(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
+
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    aba = janela._abas_perimetro()[0]
+    colunas = aba.modelo_tabela.dataframe().columns
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, colunas.get_loc("codigo")), "AJ4-M-001", Qt.ItemDataRole.EditRole)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, colunas.get_loc("e_long")), "-48,50", Qt.ItemDataRole.EditRole)
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, colunas.get_loc("n_lat")), "-27,50", Qt.ItemDataRole.EditRole)
+
+    caminho = tmp_path / "saida.zip"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(caminho), "")))
+
+    janela._exportar_shapefile()
+
+    assert caminho.exists()
+    import zipfile
+
+    with zipfile.ZipFile(caminho) as zf:
+        assert len(zf.namelist()) == 8

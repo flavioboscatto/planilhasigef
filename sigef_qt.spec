@@ -24,11 +24,15 @@ hiddenimports = []
 # de leitura de XLSX/ODS/XLS do pandas — o hook padrão às vezes não pega
 # tudo que pandas carrega dinamicamente por dentro, coleta explícita evita
 # erro só na hora de abrir um arquivo desse formato no .exe empacotado.
+# "shapefile" é o pacote pyshp (core/exportacao_shapefile.py, V7).
+# "qtawesome" tem fontes de ícone (.ttf) como dado de pacote, sem hook
+# próprio no pyinstaller-hooks-contrib — sem coleta explícita, os ícones
+# apareciam em branco no .exe (achava o Python, não achava a fonte).
 # PySide6 fica de fora desta lista de propósito: o hook nativo do
 # PyInstaller pra PySide6 já detecta e empacota só os módulos Qt realmente
 # importados (widgets/core/gui) — um collect_all aqui traria WebEngine,
 # Multimedia, 3D etc. que este app nunca usa.
-for pacote in ("pyproj", "shapely", "lxml", "pydantic", "openpyxl", "odf", "xlrd"):
+for pacote in ("pyproj", "shapely", "lxml", "pydantic", "openpyxl", "odf", "xlrd", "shapefile", "qtawesome"):
     d, b, h = collect_all(pacote)
     datas += d
     binaries += b

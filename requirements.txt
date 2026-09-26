@@ -10,6 +10,9 @@ python-docx==1.2.0
 openpyxl==3.1.5
 odfpy==1.4.1
 xlrd==2.0.2
+pyshp==3.0.9
+qtawesome==1.4.2
+qtpy==2.4.3
 
 # testes
 pytest==9.1.1

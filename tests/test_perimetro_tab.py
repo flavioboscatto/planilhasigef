@@ -31,13 +31,13 @@ def test_criar_aba_importacao_adiciona_sub_aba_persistente(qtbot):
     qtbot.addWidget(aba)
 
     dados = pd.DataFrame({"codigo": ["AJ4-M-001"], "e_long": ["-48,00"], "n_lat": ["-9,00"]})
-    aba._criar_aba_importacao(dados, None, -51.0, "Sul")
+    aba._criar_aba_importacao(dados, None, None, -51.0, "Sul")
 
     assert aba.subabas.count() == 2  # "Tabela de Perímetro" + "Importação 1"
     assert aba.subabas.tabText(1) == "Importação 1"
     assert isinstance(aba.subabas.widget(1), AbaImportacao)
 
-    aba._criar_aba_importacao(dados, None, -51.0, "Sul")
+    aba._criar_aba_importacao(dados, None, None, -51.0, "Sul")
     assert aba.subabas.tabText(2) == "Importação 2"
 
 
@@ -53,7 +53,7 @@ def test_usar_esta_versao_mescla_e_a_aba_de_importacao_continua_visivel(qtbot, m
     qtbot.addWidget(aba)
 
     dados = pd.DataFrame({"codigo": ["AJ4-M-001"], "e_long": ["-48,00"], "n_lat": ["-9,00"]})
-    aba._criar_aba_importacao(dados, None, -51.0, "Sul")
+    aba._criar_aba_importacao(dados, None, None, -51.0, "Sul")
     aba_importacao = aba.subabas.widget(1)
 
     aba._aplicar_versao_importada(aba_importacao._dataframe_atual())
@@ -68,7 +68,7 @@ def test_remover_aba_importacao_tira_da_lista_de_sub_abas(qtbot):
     qtbot.addWidget(aba)
 
     dados = pd.DataFrame({"codigo": ["AJ4-M-001"], "e_long": ["-48,00"], "n_lat": ["-9,00"]})
-    aba._criar_aba_importacao(dados, None, -51.0, "Sul")
+    aba._criar_aba_importacao(dados, None, None, -51.0, "Sul")
     aba_importacao = aba.subabas.widget(1)
 
     aba._remover_aba_importacao(aba_importacao)
@@ -468,3 +468,48 @@ def test_carregar_cabecalho_repopula_campos(qtbot):
     assert aba.tipo_coordenada.currentText() == "UTM"
     assert aba.meridiano_central.currentText() == "-45"
     assert aba.hemisferio.currentText() == "Norte"
+
+
+def test_limpar_parcela_confirmado_apaga_a_grade(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    col_codigo = aba.modelo_tabela.dataframe().columns.get_loc("codigo")
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "AJ4-M-001", 2)
+    aba.denominacao.setText("Fazenda Teste")
+
+    aba._limpar_parcela()
+
+    assert aba.modelo_tabela.dataframe().at[0, "codigo"] == ""
+    assert aba.denominacao.text() == "Fazenda Teste"  # cabeçalho não é afetado
+
+
+def test_limpar_parcela_cancelado_nao_apaga_nada(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    col_codigo = aba.modelo_tabela.dataframe().columns.get_loc("codigo")
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "AJ4-M-001", 2)
+
+    aba._limpar_parcela()
+
+    assert aba.modelo_tabela.dataframe().at[0, "codigo"] == "AJ4-M-001"
+
+
+def test_limpar_parcela_pode_ser_desfeita(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    col_codigo = aba.modelo_tabela.dataframe().columns.get_loc("codigo")
+    aba.modelo_tabela.setData(aba.modelo_tabela.index(0, col_codigo), "AJ4-M-001", 2)
+
+    aba._limpar_parcela()
+    aba.modelo_tabela.desfazer()
+
+    assert aba.modelo_tabela.dataframe().at[0, "codigo"] == "AJ4-M-001"
