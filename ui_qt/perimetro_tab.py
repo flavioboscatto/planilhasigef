@@ -155,45 +155,58 @@ class AbaPerimetro(QWidget):
         self.grade = TabelaVerticesView(self.modelo_tabela)
         layout_aba_tabela.addWidget(self.grade)
 
+        # fonte/altura menores, mesmo ajuste de ui_qt/renumeracao_panel.py —
+        # pedido do usuário pra ganhar espaço vertical pra grade, já que
+        # estes 10 botões viraram 2 fileiras de 5 (eram 3 fileiras: 4+4+2).
+        _AJUSTE_COMPACTO = "QPushButton { padding: 4px 8px; font-size: 9pt; }"
+
         def _botao_grade(texto: str, destaque: bool = False, icone: str | None = None) -> QPushButton:
             # destaque=True (negrito + borda mais grossa): pedido da
             # turma-teste pra ressaltar as ações mais usadas/importantes
             # (Renumerar, Reorganizar, Visualizar parcela) das demais.
             botao = (botao_verde_destaque if destaque else botao_verde)(texto, tema, icone)
-            botao.setMinimumWidth(150)
+            botao.setStyleSheet(botao.styleSheet() + _AJUSTE_COMPACTO)
+            botao.setMinimumWidth(110)
             botao.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             return botao
 
-        # 8 botões em 2 fileiras de 4: Marcar/Desmarcar/Atualizar/Renumerar
-        # (vieram do painel de Numeração pra cá, a pedido do usuário — ficam
-        # junto da grade que eles afetam) em cima de Adicionar/Remover/
-        # Subir/Descer, que já moravam aqui.
-        barra_numeracao = QHBoxLayout()
+        # 10 botões em 2 fileiras de 5, ordem pedida pelo usuário (turma-
+        # teste): 1) Marcar/Desmarcar/Renumerar/Reorganizar/Atualizar (ações
+        # sobre código/numeração); 2) Adicionar/Remover/Subir/Descer linha +
+        # Visualizar parcela (ações sobre a grade). Reorganizar e Visualizar
+        # nasceram aqui porque já agem só sobre esta parcela; Renumerar/
+        # Atualizar continuam contando entre TODAS as parcelas, então só
+        # delegam pro painel compartilhado (ver _renumerar/_atualizar_tipos).
+        barra1 = QHBoxLayout()
         btn_marcar = _botao_grade("Marcar todos", icone="fa5s.check-square")
         btn_marcar.setToolTip('Marca "Renumerar?" em toda a grade desta parcela.')
         btn_marcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", True))
         btn_desmarcar = _botao_grade("Desmarcar todos", icone="fa5.square")
         btn_desmarcar.setToolTip('Desmarca "Renumerar?" em toda a grade desta parcela.')
         btn_desmarcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", False))
-        btn_atualizar = _botao_grade("Atualizar código (só o Tipo)", icone="fa5s.sync")
-        btn_atualizar.setToolTip(
-            "Já renumerou e corrigiu o Tipo de algum vértice na grade? Isto "
-            "reescreve só o pedaço do Tipo no código, sem reatribuir número."
-        )
-        btn_atualizar.clicked.connect(self._atualizar_tipos)
         btn_renumerar = _botao_grade("Renumerar vértices marcados", destaque=True, icone="fa5s.sort-numeric-down")
         btn_renumerar.setToolTip(
             'Só linhas com "Renumerar?" marcado recebem código novo, em todas '
             "as parcelas abertas — desmarque vértices que não são seus."
         )
         btn_renumerar.clicked.connect(self._renumerar)
-        barra_numeracao.addWidget(btn_marcar)
-        barra_numeracao.addWidget(btn_desmarcar)
-        barra_numeracao.addWidget(btn_atualizar)
-        barra_numeracao.addWidget(btn_renumerar)
-        layout_aba_tabela.addLayout(barra_numeracao)
+        btn_reorganizar = _botao_grade("Reorganizar vértices", destaque=True, icone="fa5s.sync-alt")
+        btn_reorganizar.setToolTip("Reorganiza a grade desta parcela (mais ao norte, sentido horário).")
+        btn_reorganizar.clicked.connect(self._reorganizar)
+        btn_atualizar = _botao_grade("Atualizar código (só o Tipo)", icone="fa5s.sync")
+        btn_atualizar.setToolTip(
+            "Já renumerou e corrigiu o Tipo de algum vértice na grade? Isto "
+            "reescreve só o pedaço do Tipo no código, sem reatribuir número."
+        )
+        btn_atualizar.clicked.connect(self._atualizar_tipos)
+        barra1.addWidget(btn_marcar)
+        barra1.addWidget(btn_desmarcar)
+        barra1.addWidget(btn_renumerar)
+        barra1.addWidget(btn_reorganizar)
+        barra1.addWidget(btn_atualizar)
+        layout_aba_tabela.addLayout(barra1)
 
-        barra_linhas = QHBoxLayout()
+        barra2 = QHBoxLayout()
         btn_add_linha = _botao_grade("Adicionar vértice", icone="fa5s.plus-circle")
         btn_remove_linha = _botao_grade("Remover vértice(s) selecionado(s)", icone="fa5s.minus-circle")
         btn_subir_linha = _botao_grade("Subir linha selecionada", icone="fa5s.arrow-up")
@@ -202,31 +215,18 @@ class AbaPerimetro(QWidget):
         btn_remove_linha.clicked.connect(self._remover_linhas_selecionadas)
         btn_subir_linha.clicked.connect(lambda: self._mover_linha_selecionada(-1))
         btn_descer_linha.clicked.connect(lambda: self._mover_linha_selecionada(1))
-        barra_linhas.addWidget(btn_add_linha)
-        barra_linhas.addWidget(btn_remove_linha)
-        barra_linhas.addWidget(btn_subir_linha)
-        barra_linhas.addWidget(btn_descer_linha)
-        layout_aba_tabela.addLayout(barra_linhas)
-
-        # fileira própria, não mexe no 2x4 já fechado a pedido do usuário —
-        # Reorganizar/Visualizar são conferência/arrumação do perímetro, não
-        # ações de linha da grade. Reorganizar morava no painel de Numeração
-        # (agia só na aba "atual" por indireção) — desceu pra cá porque já
-        # nasce dentro da aba que afeta, sem precisar dessa indireção.
-        barra_visualizacao = QHBoxLayout()
-        btn_reorganizar = _botao_grade("Reorganizar vértices", destaque=True, icone="fa5s.sync-alt")
-        btn_reorganizar.setToolTip("Reorganiza a grade desta parcela (mais ao norte, sentido horário).")
-        btn_reorganizar.clicked.connect(self._reorganizar)
-        barra_visualizacao.addWidget(btn_reorganizar)
-
         btn_visualizar = _botao_grade("Visualizar parcela", destaque=True, icone="fa5s.search")
         btn_visualizar.setToolTip(
             "Desenha os vértices e o perímetro fechado desta parcela, avisando se "
             "algum lado se cruza com outro."
         )
         btn_visualizar.clicked.connect(self._abrir_visualizacao)
-        barra_visualizacao.addWidget(btn_visualizar)
-        layout_aba_tabela.addLayout(barra_visualizacao)
+        barra2.addWidget(btn_add_linha)
+        barra2.addWidget(btn_remove_linha)
+        barra2.addWidget(btn_subir_linha)
+        barra2.addWidget(btn_descer_linha)
+        barra2.addWidget(btn_visualizar)
+        layout_aba_tabela.addLayout(barra2)
 
         self.subabas.addTab(aba_tabela, "Tabela de Perímetro")
 
