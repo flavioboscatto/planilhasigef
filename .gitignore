@@ -8,6 +8,7 @@ __pycache__/
 
 # venv
 .venv/
+.venv-hp/
 venv/
 env/
 
@@ -17,6 +18,7 @@ env/
 # Saída gerada, não versionada
 tools/out/
 build/
+build_hp/
 dist/
 
 # Dado pessoal (CLAUDE.md regra 6): projeto salvo nunca vai pro repositório,

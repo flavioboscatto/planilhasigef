@@ -17,8 +17,8 @@ from __future__ import annotations
 import warnings
 from typing import Callable
 
-from PySide6.QtCore import QPointF, QRectF
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen, QWheelEvent
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import QBrush, QColor, QFont, QGuiApplication, QPainter, QPen, QWheelEvent
 from PySide6.QtWidgets import (
     QDialog,
     QGraphicsEllipseItem,
@@ -41,6 +41,19 @@ _RAIO_PONTO = 4
 _COR_LADO = QColor("#345b3a")  # mesmo verde escuro de "perimetro_titulo" (config/theme_tokens.json)
 _COR_CRUZAMENTO = QColor("#b3261e")
 _COR_PONTO = QColor("#000000")
+# no tema escuro o fundo do desenho também escurece (paleta do Qt), então
+# lado, ponto e rótulo de vértice trocam pra tons claros — verde escuro e
+# preto sumiriam sobre ele.
+_COR_LADO_ESCURO = QColor("#8fd19e")
+_COR_CRUZAMENTO_ESCURO = QColor("#ff7b72")
+_COR_PONTO_ESCURO = QColor("#f2f2f2")
+
+
+def _cores_do_tema() -> tuple[QColor, QColor, QColor]:
+    """(lado, cruzamento, ponto/rótulo) pro esquema de cores atual."""
+    if QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark:
+        return _COR_LADO_ESCURO, _COR_CRUZAMENTO_ESCURO, _COR_PONTO_ESCURO
+    return _COR_LADO, _COR_CRUZAMENTO, _COR_PONTO
 _MARGEM_PX = 40
 _LARGURA_CENA = 700
 _ALTURA_CENA = 600
@@ -178,11 +191,12 @@ class VisualizarParcelaDialog(QDialog):
 
         pontos_cena = [_para_cena(e, n) for e, n in pontos_m]
         n = len(vertices)
+        cor_lado, cor_cruzamento, cor_ponto = _cores_do_tema()
 
         for i in range(n):
             p1 = pontos_cena[i]
             p2 = pontos_cena[(i + 1) % n]
-            cor = _COR_CRUZAMENTO if i in lados_com_problema else _COR_LADO
+            cor = cor_cruzamento if i in lados_com_problema else cor_lado
             largura_linha = 2.5 if i in lados_com_problema else 1.5
             linha = QGraphicsLineItem(p1.x(), p1.y(), p2.x(), p2.y())
             linha.setPen(QPen(cor, largura_linha))
@@ -190,8 +204,8 @@ class VisualizarParcelaDialog(QDialog):
 
         for vertice, ponto in zip(vertices, pontos_cena):
             circulo = QGraphicsEllipseItem(QRectF(-_RAIO_PONTO, -_RAIO_PONTO, 2 * _RAIO_PONTO, 2 * _RAIO_PONTO))
-            circulo.setBrush(QBrush(_COR_PONTO))
-            circulo.setPen(QPen(_COR_PONTO))
+            circulo.setBrush(QBrush(cor_ponto))
+            circulo.setPen(QPen(cor_ponto))
             circulo.setPos(ponto)
             # pedido do usuário: o marcador de ponto tem que se comportar
             # igual ao rótulo do código logo abaixo — só a POSIÇÃO acompanha
@@ -200,6 +214,7 @@ class VisualizarParcelaDialog(QDialog):
             self.cena.addItem(circulo)
 
             rotulo = QGraphicsTextItem(vertice.codigo)
+            rotulo.setDefaultTextColor(cor_ponto)
             fonte = rotulo.font()
             fonte.setPointSize(_TAMANHO_ROTULO_PT)
             rotulo.setFont(fonte)

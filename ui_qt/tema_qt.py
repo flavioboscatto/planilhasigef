@@ -16,8 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import qtawesome as qta
-from PySide6.QtCore import QSize
-from PySide6.QtGui import QColor, QFont, QIcon
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QIcon
 from PySide6.QtWidgets import QLabel, QPushButton
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "theme_tokens.json"
@@ -51,6 +51,19 @@ def carregar_tema() -> dict[str, Papel]:
         texto = QColor(dados["texto"]) if dados.get("texto") else QColor("#000000")
         papeis[nome] = Papel(fundo=fundo, texto=texto, negrito=bool(dados.get("negrito")))
     return papeis
+
+
+# texto dos botões coloridos: fixo, nunca herda a cor da paleta — os fundos
+# pastel (verde/azul/rosa) são os mesmos nos temas Claro e Escuro, então um
+# texto herdado (branco no modo escuro) sumia sobre eles.
+_TEXTO_ESCURO = "#1f2933"
+
+
+def cor_icone_neutra() -> str:
+    """Cor de ícone para superfícies que seguem o tema (barra de
+    ferramentas): escuro no tema claro, claro no escuro."""
+    escuro = QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
+    return "#e6e9ee" if escuro else "#2f2f2f"
 
 
 def icone(nome: str, cor: str = "#2f2f2f") -> QIcon:
@@ -95,12 +108,24 @@ def botao_verde(texto: str, tema: dict[str, Papel], icone_nome: str | None = Non
     cor = tema["perimetro_entrada"].fundo
     botao = QPushButton(texto)
     _aplicar_icone(botao, icone_nome, "#2f2f2f")
-    botao.setStyleSheet(
-        f"QPushButton {{ background: {cor.name()}; border: 1px solid {cor.darker(140).name()}; }}"
+    botao.setStyleSheet(_estilo_botao_pastel(cor))
+    return botao
+
+
+def _estilo_botao_pastel(cor: QColor, destaque: bool = False) -> str:
+    """QSS dos botões coloridos claros (verde/azul/rosa): texto escuro
+    explícito e borda um tom mais marcada que o fundo (contraste sutil, pedido
+    da turma-teste); borda inferior um pouco mais grossa dá leve relevo. Em
+    `destaque` (negrito + borda 2px) a borda já é grossa o bastante."""
+    if destaque:
+        borda = f"border: 2px solid {cor.darker(155).name()}; font-weight: bold;"
+    else:
+        borda = f"border: 1px solid {cor.darker(155).name()}; border-bottom: 2px solid {cor.darker(185).name()};"
+    return (
+        f"QPushButton {{ background: {cor.name()}; color: {_TEXTO_ESCURO}; {borda} }}"
         f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
         f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
     )
-    return botao
 
 
 def botao_verde_destaque(texto: str, tema: dict[str, Papel], icone_nome: str | None = None) -> QPushButton:
@@ -111,11 +136,7 @@ def botao_verde_destaque(texto: str, tema: dict[str, Papel], icone_nome: str | N
     cor = tema["perimetro_entrada"].fundo
     botao = QPushButton(texto)
     _aplicar_icone(botao, icone_nome, "#2f2f2f")
-    botao.setStyleSheet(
-        f"QPushButton {{ background: {cor.name()}; border: 2px solid {cor.darker(140).name()}; font-weight: bold; }}"
-        f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
-        f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
-    )
+    botao.setStyleSheet(_estilo_botao_pastel(cor, destaque=True))
     return botao
 
 
@@ -130,7 +151,8 @@ def botao_marrom(texto: str, tema: dict[str, Papel], icone_nome: str | None = No
     botao = QPushButton(texto)
     _aplicar_icone(botao, icone_nome, "white")
     botao.setStyleSheet(
-        f"QPushButton {{ background: {cor.name()}; color: white; border: 1px solid {cor.darker(140).name()}; }}"
+        f"QPushButton {{ background: {cor.name()}; color: white; border: 1px solid {cor.darker(160).name()};"
+        f" border-bottom: 2px solid {cor.darker(200).name()}; }}"
         f"QPushButton:hover {{ background: {cor.lighter(115).name()}; }}"
         f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
     )
@@ -147,11 +169,7 @@ def botao_azul(texto: str, tema: dict[str, Papel], icone_nome: str | None = None
     cor = tema["detentor_entrada"].fundo
     botao = QPushButton(texto)
     _aplicar_icone(botao, icone_nome, "#2f2f2f")
-    botao.setStyleSheet(
-        f"QPushButton {{ background: {cor.name()}; border: 1px solid {cor.darker(140).name()}; }}"
-        f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
-        f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
-    )
+    botao.setStyleSheet(_estilo_botao_pastel(cor))
     return botao
 
 
@@ -162,9 +180,5 @@ def botao_perigo(texto: str, tema: dict[str, Papel], icone_nome: str | None = No
     cor = tema["servico_entrada"].fundo
     botao = QPushButton(texto)
     _aplicar_icone(botao, icone_nome, "#2f2f2f")
-    botao.setStyleSheet(
-        f"QPushButton {{ background: {cor.name()}; border: 1px solid {cor.darker(140).name()}; }}"
-        f"QPushButton:hover {{ background: {cor.darker(108).name()}; }}"
-        f"QPushButton:pressed {{ background: {cor.darker(120).name()}; }}"
-    )
+    botao.setStyleSheet(_estilo_botao_pastel(cor))
     return botao

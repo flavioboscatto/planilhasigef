@@ -1,0 +1,13 @@
+# Dependências do build PlanSIGEF_HP.exe, para computadores antigos.
+#
+# O NumPy 2.4+ exige CPU com SSE4.2 (nível "x86-64-v2"); processadores como
+# AMD Phenom II e Intel Core 2 não têm, e o programa nem abre ("DLL load
+# failed while importing _multiarray_umath"). O NumPy 2.3.x só exige SSE3 e
+# usa as instruções novas só quando existem. O resto da lista é a mesma do
+# requirements.txt. pyarrow não é instalado (o programa não usa).
+#
+# Ambiente separado do principal:
+#   python -m venv .venv-hp
+#   .venv-hp\Scripts\python -m pip install -r requirements-hp.txt pyinstaller==6.20.0
+-r requirements.txt
+numpy==2.3.5

@@ -175,6 +175,85 @@ def test_preencher_em_lote_metodo_posicionamento(qtbot):
     assert list(aba.modelo_tabela.dataframe()["metodo_posicionamento"]) == ["PG1", "PG1", "PG1"]
 
 
+def test_botoes_usam_o_termo_selecionar_e_nao_marcar(qtbot):
+    from PySide6.QtWidgets import QPushButton
+
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    textos = {b.text() for b in aba.findChildren(QPushButton)}
+
+    assert {
+        "Selecionar todas",
+        "Limpar seleção de todas",
+        "Renumerar vértices selecionados",
+        "Aplicar às linhas selecionadas",
+    } <= textos
+    assert not [t for t in textos if "marcad" in t.lower() or "marcar" in t.lower()]
+
+
+def test_menu_gerenciar_planilha_usa_o_termo_selecionar(qtbot):
+    from app_qt import JanelaPrincipal
+
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    menu = next(a.menu() for a in janela.menuBar().actions() if "Gerenciar Planilha" in a.text())
+    textos = [a.text() for a in menu.actions() if not a.isSeparator()]
+
+    assert "Selecionar todas" in textos
+    assert "Limpar seleção de todas" in textos
+    assert "Renumerar vértices selecionados" in textos
+    assert not [t for t in textos if "marcad" in t.lower() or "marcar" in t.lower()]
+
+
+def _marcar_linhas(aba, marcadas: list[bool]) -> None:
+    for linha, marcada in enumerate(marcadas):
+        aba.modelo_tabela._df.iat[linha, aba.modelo_tabela._df.columns.get_loc("renumerar")] = marcada
+
+
+def test_preencher_em_lote_so_nas_linhas_marcadas(qtbot):
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    _marcar_linhas(aba, [True, False, True])
+
+    aba.combo_coluna_lote.setCurrentText("Método de Posicionamento")
+    aba.combo_valor_lote.setCurrentText("PG1")
+    aba._aplicar_lote(True)
+
+    assert list(aba.modelo_tabela.dataframe()["metodo_posicionamento"]) == ["PG1", "", "PG1"]
+
+
+def test_preencher_em_lote_marcadas_e_desfazivel_em_um_passo(qtbot):
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    _marcar_linhas(aba, [True, False, True])
+
+    aba.combo_coluna_lote.setCurrentText("Método de Posicionamento")
+    aba.combo_valor_lote.setCurrentText("PG1")
+    aba._aplicar_lote(True)
+    aba.modelo_tabela.desfazer()
+
+    assert list(aba.modelo_tabela.dataframe()["metodo_posicionamento"]) == ["", "", ""]
+
+
+def test_preencher_em_lote_marcadas_sem_nenhuma_marcada_avisa_e_nao_altera(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    avisos = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: avisos.append(a))
+    aba = _nova_aba()
+    qtbot.addWidget(aba)
+    _marcar_linhas(aba, [False, False, False])
+
+    aba.combo_coluna_lote.setCurrentText("Método de Posicionamento")
+    aba.combo_valor_lote.setCurrentText("PG1")
+    aba._aplicar_lote(True)
+
+    assert len(avisos) == 1
+    assert list(aba.modelo_tabela.dataframe()["metodo_posicionamento"]) == ["", "", ""]
+    # não gravou passo vazio no histórico: Desfazer não tem nada a desfazer
+    assert aba.modelo_tabela.desfazer() is False
+
+
 def test_botao_reorganizar_esta_conectado_de_verdade(qtbot, monkeypatch):
     # V4: Reorganizar desceu do painel de Numeração pra junto da grade
     # (barra_visualizacao, ao lado de Visualizar parcela) — confere que o

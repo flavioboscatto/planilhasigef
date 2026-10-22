@@ -28,13 +28,14 @@ from core.numeracao import atualizar_tipos_parcelas, renumerar_parcelas
 from ui_qt.tema_qt import botao_azul, botao_marrom, botao_perigo, botao_verde, botao_verde_destaque
 
 _FORMATOS_NUMERO = ["1", "01", "001", "0001", "00001"]
+_MAX_AVISOS_VISIVEIS = 12
 
 
 def _campo_com_rotulo(rotulo: str, largura: int | None = None) -> tuple[QVBoxLayout, QLineEdit]:
     layout = QVBoxLayout()
     layout.setSpacing(2)
     etiqueta = QLabel(rotulo)
-    etiqueta.setStyleSheet("font-size: 8.5pt; color: #55606b;")
+    etiqueta.setProperty("rotuloPequeno", True)  # estilo: ui_qt/estilo_qt.py (muda com o tema)
     campo = QLineEdit("001")
     if largura:
         campo.setFixedWidth(largura)
@@ -209,13 +210,13 @@ class PainelNumeracao(QWidget):
 
     def _rotulo_pequeno(self, texto: str) -> QLabel:
         etiqueta = QLabel(texto)
-        etiqueta.setStyleSheet("font-size: 8.5pt; color: #55606b;")
+        etiqueta.setProperty("rotuloPequeno", True)
         return etiqueta
 
     def _separador_vertical(self) -> QWidget:
         linha = QWidget()
         linha.setFixedWidth(1)
-        linha.setStyleSheet("background: #c7ced6;")
+        linha.setStyleSheet("background: palette(mid);")
         return linha
 
     def _largura(self) -> int:
@@ -227,6 +228,9 @@ class PainelNumeracao(QWidget):
             return max(1, int(bruto))
         except ValueError:
             return 1
+
+    def _inicio_por_tipo(self) -> dict[str, int]:
+        return {codigo: self._numero_de(campo) for codigo, campo in self._campos_numero.items()}
 
     def _exigir_aba_atual(self):
         aba = self._obter_aba_atual()
@@ -260,12 +264,80 @@ class PainelNumeracao(QWidget):
             QMessageBox.warning(self, "Numeração", "Informe o código do credenciado antes de renumerar.")
             return
 
+        tabelas = [aba.modelo_tabela.dataframe() for aba in self._obter_abas()]
+        crescente = self._simular(tabelas, credenciado, decrescente=False)
+        decrescente = self._simular(tabelas, credenciado, decrescente=True)
+        if crescente[0] == 0:
+            # nada selecionado/utilizável: o aviso de sempre, sem perguntar ordem
+            self._executar_renumeracao(decrescente=False)
+            return
+
+        escolha = self._perguntar_ordem(crescente, decrescente)
+        if escolha is not None:
+            self._executar_renumeracao(decrescente=escolha)
+
+    def _simular(self, tabelas: list, credenciado: str, decrescente: bool) -> tuple[int, str, int]:
+        """(vértices renumerados, faixa de códigos por tipo, nº de avisos) se
+        a renumeração rodasse agora naquela ordem — não altera nada."""
+        inicio_por_tipo = self._inicio_por_tipo()
+        _, proximos, avisos, total = renumerar_parcelas(
+            tabelas, credenciado, inicio_por_tipo, self._largura(), decrescente=decrescente
+        )
+        faixas = self._faixas_usadas(credenciado, inicio_por_tipo, proximos, decrescente)
+        return total, faixas, len(avisos)
+
+    def _perguntar_ordem(self, crescente: tuple[int, str, int], decrescente: tuple[int, str, int]) -> bool | None:
+        """Pergunta a ordem da renumeração: True = decrescente, False =
+        crescente, None = cancelou. Mostra o resultado de cada opção pra
+        decidir sem tentar e desfazer."""
+
+        def _descricao(titulo: str, explicacao: str, previa: tuple[int, str, int]) -> str:
+            total, faixas, avisos = previa
+            corpo = "\n".join(f"    {linha}" for linha in faixas.splitlines()) if faixas else "    (nenhum vértice)"
+            alerta = f"\n    Atenção: {avisos} aviso(s) nesta ordem." if avisos else ""
+            return f"{titulo} — {explicacao}\n{corpo}{alerta}"
+
+        caixa = QMessageBox(self)
+        caixa.setIcon(QMessageBox.Icon.Question)
+        caixa.setWindowTitle("Renumerar vértices selecionados")
+        caixa.setText(f"Renumerar {crescente[0]} vértice(s) selecionado(s). Em qual ordem?")
+        caixa.setInformativeText(
+            _descricao("Crescente", "a primeira linha selecionada recebe o menor número", crescente)
+            + "\n\n"
+            + _descricao("Decrescente", "a primeira linha selecionada recebe o maior número", decrescente)
+            + "\n\nOs números são os mesmos nas duas ordens: começam no Próximo nº de cada tipo. "
+            "Use Decrescente quando o vértice é compartilhado com um confrontante já certificado, "
+            "que numerou no sentido oposto. Vértices sem seleção não são alterados."
+        )
+        botao_crescente = caixa.addButton("Crescente", QMessageBox.ButtonRole.AcceptRole)
+        botao_decrescente = caixa.addButton("Decrescente", QMessageBox.ButtonRole.AcceptRole)
+        caixa.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+        caixa.setDefaultButton(botao_crescente)
+        caixa.exec()
+        clicado = caixa.clickedButton()
+        if clicado is botao_decrescente:
+            return True
+        if clicado is botao_crescente:
+            return False
+        return None
+
+    def _mostrar_avisos(self, avisos: list[str]) -> None:
+        # uma janela só: com 8 linhas problemáticas eram 8 diálogos seguidos
+        if not avisos:
+            return
+        corpo = "\n".join(avisos[:_MAX_AVISOS_VISIVEIS])
+        if len(avisos) > _MAX_AVISOS_VISIVEIS:
+            corpo += f"\n... e mais {len(avisos) - _MAX_AVISOS_VISIVEIS} aviso(s)."
+        QMessageBox.warning(self, "Numeração", corpo)
+
+    def _executar_renumeracao(self, decrescente: bool) -> None:
+        credenciado = self.campo_credenciado.text().strip().upper()
         abas = self._obter_abas()
         tabelas = [aba.modelo_tabela.dataframe() for aba in abas]
-        inicio_por_tipo = {codigo: self._numero_de(campo) for codigo, campo in self._campos_numero.items()}
+        inicio_por_tipo = self._inicio_por_tipo()
 
         atualizadas, proximos, avisos, total = renumerar_parcelas(
-            tabelas, credenciado, inicio_por_tipo, self._largura()
+            tabelas, credenciado, inicio_por_tipo, self._largura(), decrescente=decrescente
         )
         for aba, tabela in zip(abas, atualizadas):
             aba.modelo_tabela.substituir(tabela)
@@ -273,16 +345,36 @@ class PainelNumeracao(QWidget):
             if codigo in self._campos_numero:
                 self._campos_numero[codigo].setText(f"{valor:0{self._largura()}d}")
 
-        for aviso in avisos:
-            QMessageBox.warning(self, "Numeração", aviso)
+        self._mostrar_avisos(avisos)
         if total > 0:
-            QMessageBox.information(self, "Numeração", f"{total} vértice(s) renumerado(s).")
+            faixas = self._faixas_usadas(credenciado, inicio_por_tipo, proximos, decrescente)
+            QMessageBox.information(
+                self, "Numeração", f"{total} vértice(s) renumerado(s).\n\n{faixas}".rstrip()
+            )
         elif not avisos:
             QMessageBox.warning(
                 self, "Numeração",
-                'Nenhum vértice foi renumerado — confira se "Renumerar?" está '
-                'marcado e se "Tipo" está preenchido nas linhas desejadas.',
+                'Nenhum vértice foi renumerado — confira se a caixa "Selecionar" está '
+                'selecionada e se "Tipo" está preenchido nas linhas desejadas.',
             )
+
+    def _faixas_usadas(
+        self, credenciado: str, inicio_por_tipo: dict[str, int], proximos: dict[str, int], decrescente: bool
+    ) -> str:
+        # confirma o sentido na hora, da PRIMEIRA à ÚLTIMA linha selecionada:
+        # "AJQ-M-001 a AJQ-M-008" (crescente) ou "AJQ-M-008 a AJQ-M-001"
+        # (decrescente), um tipo por linha
+        largura = self._largura()
+        linhas = []
+        for tipo, inicio in inicio_por_tipo.items():
+            ultimo = proximos.get(tipo, inicio) - 1
+            if ultimo < inicio:
+                continue
+            primeira, final = (ultimo, inicio) if decrescente else (inicio, ultimo)
+            linhas.append(
+                f"{credenciado}-{tipo}-{primeira:0{largura}d} a {credenciado}-{tipo}-{final:0{largura}d}"
+            )
+        return "\n".join(linhas)
 
     def _atualizar_tipos(self) -> None:
         abas = self._obter_abas()
@@ -292,14 +384,13 @@ class PainelNumeracao(QWidget):
         for aba, tabela in zip(abas, atualizadas):
             aba.modelo_tabela.substituir(tabela)
 
-        for aviso in avisos:
-            QMessageBox.warning(self, "Numeração", aviso)
+        self._mostrar_avisos(avisos)
         if total > 0:
             QMessageBox.information(self, "Numeração", f"{total} código(s) atualizado(s).")
         elif not avisos:
             QMessageBox.warning(
                 self, "Numeração",
-                'Nenhum código foi atualizado — confira "Renumerar?", se o Tipo '
+                'Nenhum código foi atualizado — confira a caixa "Selecionar", se o Tipo '
                 "mudou de verdade, e se o código já está no formato "
                 "CREDENCIADO-TIPO-NUMERO.",
             )

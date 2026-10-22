@@ -215,6 +215,21 @@ def test_round_trip_preserva_numeracao(qtbot):
     assert nova.painel_numeracao._campos_numero["M"].text() == "0007"
 
 
+def test_projeto_com_chave_ordem_de_versao_anterior_ainda_abre(qtbot):
+    # a ordem crescente/decrescente já foi gravada no projeto (versão de
+    # teste); agora é perguntada a cada renumeração — a chave sobrando é ignorada
+    janela = JanelaPrincipal()
+    qtbot.addWidget(janela)
+    dados = desserializar(serializar(montar_projeto(janela)))
+    dados["numeracao"]["ordem"] = "Decrescente"
+
+    nova = JanelaPrincipal()
+    qtbot.addWidget(nova)
+    aplicar_projeto(nova, dados)
+
+    assert not hasattr(nova.painel_numeracao, "combo_ordem")
+
+
 def test_round_trip_preserva_numeracao_mesmo_com_importacao_na_parcela(qtbot):
     # bug relatado pelo usuário: o loop que recria as sub-abas de
     # importação reaproveitava o nome "dados" (parâmetro da função

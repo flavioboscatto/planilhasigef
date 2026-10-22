@@ -39,7 +39,7 @@ _COLUNAS_SIGMA = {"sigma_long", "sigma_lat", "sigma_h"}
 
 _ROTULOS = {
     "pt_original": "Pt.Original",
-    "renumerar": "Renum.",
+    "renumerar": "Selecionar",
     "tipo_vertice": "Tipo",
     "codigo": "Vértice",
     "e_long": "E/Long",
@@ -186,17 +186,30 @@ class TabelaVerticesModel(QAbstractTableModel):
                 self._df = self._df.drop(self._df.index[pos]).reset_index(drop=True)
                 self.endRemoveRows()
 
-    def definir_coluna(self, campo: str, valor) -> None:
-        """Preenche uma coluna inteira de uma vez (equivalente ao
-        "Preencher em lote" do Streamlit) — uma emissão de dataChanged só,
-        não uma por célula."""
-        self._guardar_para_desfazer()
-        coluna = COLUNAS_VERTICE.index(campo)
-        self._df[campo] = valor
+    def definir_coluna(self, campo: str, valor, somente_selecionadas: bool = False) -> int:
+        """Preenche uma coluna de uma vez (equivalente ao "Preencher em
+        lote" do Streamlit) — uma emissão de dataChanged só, não uma por
+        célula. `somente_selecionadas` restringe às linhas com a caixa
+        "Selecionar" selecionada. Devolve quantas linhas foram preenchidas
+        (0 sem tocar na grade nem no histórico de Desfazer quando nenhuma
+        estava selecionada)."""
+        if somente_selecionadas:
+            mascara = self._df["renumerar"].astype(bool)
+            afetadas = int(mascara.sum())
+            if afetadas == 0:
+                return 0
+            self._guardar_para_desfazer()
+            self._df.loc[mascara, campo] = valor
+        else:
+            afetadas = len(self._df)
+            self._guardar_para_desfazer()
+            self._df[campo] = valor
         if len(self._df):
+            coluna = COLUNAS_VERTICE.index(campo)
             topo_esq = self.index(0, coluna)
             baixo_dir = self.index(len(self._df) - 1, coluna)
             self.dataChanged.emit(topo_esq, baixo_dir, [Qt.ItemDataRole.DisplayRole])
+        return afetadas
 
     def definir_coluna_valores(self, campo: str, valores: list) -> None:
         """Como definir_coluna, mas um valor por linha (não o mesmo valor
@@ -265,6 +278,15 @@ class TabelaVerticesModel(QAbstractTableModel):
             if campo in _COLUNAS_CONFRONTANTE:
                 return self._tema["tabela_entrada_confrontante"].fundo
 
+        # as células coloridas mantêm o fundo do modelo oficial nos temas
+        # Claro e Escuro — então o texto também é fixo (escuro), nunca o da
+        # paleta: no tema escuro ela daria texto branco sobre pastel claro.
+        if role == Qt.ItemDataRole.ForegroundRole:
+            if campo in _COLUNAS_GERAL:
+                return self._tema["tabela_entrada_geral"].texto
+            if campo in _COLUNAS_CONFRONTANTE:
+                return self._tema["tabela_entrada_confrontante"].texto
+
         return None
 
     def setData(self, index: QModelIndex, value, role: int = Qt.ItemDataRole.EditRole) -> bool:
@@ -298,6 +320,15 @@ class TabelaVerticesModel(QAbstractTableModel):
         return base | Qt.ItemFlag.ItemIsEditable
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole):
+        if role == Qt.ItemDataRole.ToolTipRole and orientation == Qt.Orientation.Horizontal:
+            if COLUNAS_VERTICE[section] == "renumerar":
+                return (
+                    "Selecione os vértices que são seus: só eles são renumerados, "
+                    "recebem o Preencher em lote \"às linhas selecionadas\" e têm o "
+                    "Tipo do código atualizado. Vértices de confrontante "
+                    "já certificado ficam sem seleção e nunca são alterados."
+                )
+            return None
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         if orientation == Qt.Orientation.Horizontal:
@@ -399,6 +430,13 @@ class TabelaVerticesView(QTableView):
         self.painel_congelado.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.painel_congelado.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.painel_congelado.setFrameShape(QFrame.Shape.NoFrame)
+        # a regra `QTableView { border: 1px }` da folha de estilo global
+        # (ui_qt/estilo_qt.py) vale TAMBÉM pra esta view, mesmo com NoFrame:
+        # cabeçalho e linhas dela ficavam 1px pra baixo/direita da grade
+        # principal (desalinho visível na fronteira Vértice | E/Long). Quem
+        # tem borda é só a principal; o painel congelado fica sobreposto
+        # dentro dela.
+        self.painel_congelado.setStyleSheet("QTableView { border: none; }")
         self.painel_congelado.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         for coluna in range(len(COLUNAS_VERTICE)):
             self.painel_congelado.setColumnHidden(coluna, coluna >= _NUM_COLUNAS_CONGELADAS)

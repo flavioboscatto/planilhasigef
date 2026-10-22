@@ -9,7 +9,13 @@
 # Streamlit roda app.py como arquivo externo via `streamlit run`, não como
 # entrypoint direto). Só os arquivos NÃO-Python lidos em tempo de execução
 # (config/, templates/) precisam ser adicionados como dados.
+import os
+
 from PyInstaller.utils.hooks import collect_all
+
+# nome do .exe configurável: o build para computadores antigos (ver
+# requirements-hp.txt) gera "PlanSIGEF_HP" com PLANSIGEF_NOME_EXE=PlanSIGEF_HP
+NOME_EXE = os.environ.get("PLANSIGEF_NOME_EXE", "PlanSIGEF")
 
 datas = [
     ("config", "config"),
@@ -80,7 +86,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="PlanSIGEF",
+    name=NOME_EXE,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

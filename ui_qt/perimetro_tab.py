@@ -1,6 +1,6 @@
 """Aba Perímetro (Qt) — equivalente a ui/aba_perimetro.py: campos de
 cabeçalho da parcela + a grade de vértices (ui_qt/vertices_table.py) +
-botões (Reorganizar, Marcar/Desmarcar todos, Preencher em lote).
+botões (Reorganizar, Selecionar todas/Limpar seleção, Preencher em lote).
 
 Sem a prévia colorida à parte que a versão Streamlit precisava: aqui a
 própria grade editável já é colorida (ver ui_qt/vertices_table.py).
@@ -118,7 +118,7 @@ class AbaPerimetro(QWidget):
             )
         )
 
-        # Marcar todos/Desmarcar todos/Desfazer moraram aqui antes — subiram
+        # Selecionar todas/Limpar seleção/Desfazer moraram aqui antes — subiram
         # pro painel de Numeração (faixa horizontal acima das abas), lado a
         # lado com Renumerar/Atualizar, a pedido do usuário. Reorganizar fez
         # o caminho inverso (voltou pra cá, ver barra_visualizacao mais
@@ -130,11 +130,18 @@ class AbaPerimetro(QWidget):
         self.combo_valor_lote.setMaxVisibleItems(MAX_ITENS_VISIVEIS_COMBO)
         self.combo_coluna_lote.currentTextChanged.connect(self._atualizar_opcoes_lote)
         btn_aplicar_lote = botao_verde("Aplicar a todas as linhas", tema)
-        btn_aplicar_lote.clicked.connect(self._aplicar_lote)
+        btn_aplicar_lote.clicked.connect(lambda: self._aplicar_lote(False))
+        btn_aplicar_selecionadas = botao_verde("Aplicar às linhas selecionadas", tema)
+        btn_aplicar_selecionadas.setToolTip(
+            'Aplica só nas linhas com a caixa da coluna "Selecionar" selecionada '
+            "(não é a seleção azul de linhas)."
+        )
+        btn_aplicar_selecionadas.clicked.connect(lambda: self._aplicar_lote(True))
         linha_lote.addWidget(QLabel("Preencher em lote:"))
         linha_lote.addWidget(self.combo_coluna_lote)
         linha_lote.addWidget(self.combo_valor_lote)
         linha_lote.addWidget(btn_aplicar_lote)
+        linha_lote.addWidget(btn_aplicar_selecionadas)
         layout.addLayout(linha_lote)
         self._atualizar_opcoes_lote(self.combo_coluna_lote.currentText())
 
@@ -171,23 +178,24 @@ class AbaPerimetro(QWidget):
             return botao
 
         # 10 botões em 2 fileiras de 5, ordem pedida pelo usuário (turma-
-        # teste): 1) Marcar/Desmarcar/Renumerar/Reorganizar/Atualizar (ações
+        # teste): 1) Selecionar/Limpar seleção/Renumerar/Reorganizar/Atualizar (ações
         # sobre código/numeração); 2) Adicionar/Remover/Subir/Descer linha +
         # Visualizar parcela (ações sobre a grade). Reorganizar e Visualizar
         # nasceram aqui porque já agem só sobre esta parcela; Renumerar/
         # Atualizar continuam contando entre TODAS as parcelas, então só
         # delegam pro painel compartilhado (ver _renumerar/_atualizar_tipos).
         barra1 = QHBoxLayout()
-        btn_marcar = _botao_grade("Marcar todos", icone="fa5s.check-square")
-        btn_marcar.setToolTip('Marca "Renumerar?" em toda a grade desta parcela.')
-        btn_marcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", True))
-        btn_desmarcar = _botao_grade("Desmarcar todos", icone="fa5.square")
-        btn_desmarcar.setToolTip('Desmarca "Renumerar?" em toda a grade desta parcela.')
-        btn_desmarcar.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", False))
-        btn_renumerar = _botao_grade("Renumerar vértices marcados", destaque=True, icone="fa5s.sort-numeric-down")
+        btn_selecionar_todas = _botao_grade("Selecionar todas", icone="fa5s.check-square")
+        btn_selecionar_todas.setToolTip('Seleciona a caixa "Selecionar" em toda a grade desta parcela.')
+        btn_selecionar_todas.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", True))
+        btn_limpar_selecao = _botao_grade("Limpar seleção de todas", icone="fa5.square")
+        btn_limpar_selecao.setToolTip('Limpa a caixa "Selecionar" em toda a grade desta parcela.')
+        btn_limpar_selecao.clicked.connect(lambda: self.modelo_tabela.definir_coluna("renumerar", False))
+        btn_renumerar = _botao_grade("Renumerar vértices selecionados", destaque=True, icone="fa5s.sort-numeric-down")
         btn_renumerar.setToolTip(
-            'Só linhas com "Renumerar?" marcado recebem código novo, em todas '
-            "as parcelas abertas — desmarque vértices que não são seus."
+            'Só linhas com a caixa "Selecionar" selecionada recebem código novo, em todas '
+            "as parcelas abertas — deixe sem seleção os vértices que não são seus. "
+            "Ao clicar, você escolhe a ordem (crescente ou decrescente)."
         )
         btn_renumerar.clicked.connect(self._renumerar)
         btn_reorganizar = _botao_grade("Reorganizar vértices", destaque=True, icone="fa5s.sync-alt")
@@ -199,8 +207,8 @@ class AbaPerimetro(QWidget):
             "reescreve só o pedaço do Tipo no código, sem reatribuir número."
         )
         btn_atualizar.clicked.connect(self._atualizar_tipos)
-        barra1.addWidget(btn_marcar)
-        barra1.addWidget(btn_desmarcar)
+        barra1.addWidget(btn_selecionar_todas)
+        barra1.addWidget(btn_limpar_selecao)
         barra1.addWidget(btn_renumerar)
         barra1.addWidget(btn_reorganizar)
         barra1.addWidget(btn_atualizar)
@@ -239,9 +247,17 @@ class AbaPerimetro(QWidget):
         self.combo_valor_lote.clear()
         self.combo_valor_lote.addItems(mapa_opcoes[escolha])
 
-    def _aplicar_lote(self) -> None:
+    def _aplicar_lote(self, somente_selecionadas: bool = False) -> None:
         campo = _CAMPOS_LOTE[self.combo_coluna_lote.currentText()]
-        self.modelo_tabela.definir_coluna(campo, self.combo_valor_lote.currentText())
+        afetadas = self.modelo_tabela.definir_coluna(
+            campo, self.combo_valor_lote.currentText(), somente_selecionadas=somente_selecionadas
+        )
+        if somente_selecionadas and afetadas == 0:
+            QMessageBox.warning(
+                self, "Preencher em lote",
+                'Nenhuma linha está com a caixa "Selecionar" selecionada — selecione as '
+                'linhas desejadas (ou use "Selecionar todas") e tente de novo.',
+            )
 
     def _remover_linhas_selecionadas(self) -> None:
         linhas = {indice.row() for indice in self.grade.selectionModel().selectedIndexes()}

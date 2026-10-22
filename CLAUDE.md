@@ -55,15 +55,23 @@ arquivo traz só o que você precisa saber para não quebrar nada.
 ```
 app_qt.py                    entrypoint (QApplication/QMainWindow) — menus (Arquivo/
                               Importar/Exportar/Gerenciar Parcelas/Gerenciar Planilha
-                              (Parcela atual)), toolbar de ícones (Novo/Abrir/Salvar/
-                              Salvar Como/Desfazer), abas (Identificação + parcelas)
+                              (Parcela atual)/Exibir > Tema Automático-Claro-Escuro),
+                              toolbar de ícones (Novo/Abrir/Salvar/Salvar Como/Desfazer,
+                              recoloridos quando o tema muda), abas (Identificação + parcelas)
 core/template_loader.py      carrega o modelo local + sha256 (cache em memória)
 core/ods_writer.py           escrita e clonagem de abas de perímetro
 core/tabela_vertices.py      conversão DataFrame <-> Vertice (Pydantic); coluna
                               "pt_original" (ajuda de tela, nunca vai pro ODS)
 core/importacao.py           mesclar_por_codigo (importação de vértices, casa por
                               Pt.Original antes do código — sobrevive à renumeração)
-core/numeracao.py            renumerar_parcelas, atualizar_tipos_parcelas
+core/numeracao.py            renumerar_parcelas: cada tipo ganha uma FAIXA de números
+                              (do "Próximo nº" digitado, 1 por linha selecionada); a ordem
+                              só decide quem recebe qual: crescente = 1ª linha recebe o
+                              menor, decrescente = 1ª linha recebe o maior (mesma faixa,
+                              invertida). Avisa se o código novo repete o de uma linha sem
+                              seleção — vértice de confrontante, nunca alterado.
+                              atualizar_tipos_parcelas. Só toca linha com a caixa
+                              "Selecionar" selecionada (campo interno `renumerar`)
 core/parsing.py              parse de número/coordenada/CPF-CNPJ tolerante a formato
 core/formatacao_vertices.py  formata vértices igual à planilha final (GMS, casas
                               decimais) — reaproveitado por exportacao_txt/relatorio_docx
@@ -95,7 +103,12 @@ ui_qt/vertices_table.py      grade de vértices (QTableView) — única porta de
 ui_qt/visualizar_parcela_dialog.py  diálogo "Visualizar parcela" (V3): desenho
                               nativo Qt (QGraphicsView, zoom no scroll + pan por
                               arraste) dos vértices + polilinha + área SGL/INCRA
-ui_qt/perimetro_tab.py       aba de uma parcela: cabeçalho + grade + sub-abas de importação
+ui_qt/perimetro_tab.py       aba de uma parcela: cabeçalho + grade + sub-abas de importação.
+                              A caixa da coluna "Selecionar" (vértices próprios) alimenta
+                              Renumerar, Atualizar código e "Preencher em lote > Aplicar às
+                              linhas selecionadas" (≠ seleção azul de linhas, usada por
+                              Remover/Subir/Descer). Botões: Selecionar todas / Limpar
+                              seleção de todas — o texto visível nunca usa "marcar/marcadas"
 ui_qt/importacao_tab.py      sub-aba "Importação N" persistente dentro da parcela —
                               colunas extras só-leitura com o valor original (UTM E/N
                               ou texto geodésico não-decimal) antes da conversão
@@ -104,10 +117,19 @@ ui_qt/remover_parcela_dialog.py  diálogo "Remover parcela" (V4): lista com caix
                               marcação, remove uma ou várias parcelas de uma vez
 ui_qt/boas_vindas_dialog.py  tela de abertura (V4): Novo projeto/Abrir/Recentes,
                               mostrada logo após a splash (app_qt.py::main)
-ui_qt/preferencias_qt.py     projetos recentes via QSettings (V4) — fora de core/
-                              (não importa PySide6) e fora de config/ (não é domínio)
+ui_qt/preferencias_qt.py     projetos recentes (V4) e tema (Automático/Claro/Escuro) via
+                              QSettings — fora de core/ (não importa PySide6) e fora de
+                              config/ (não é domínio). Todo acesso passa por `_settings()`:
+                              tests/conftest.py o redireciona pra um .ini temporário
+                              (QSettings(org, app) ignora setDefaultFormat — sem isso os
+                              testes gravavam no registro real do usuário)
 ui_qt/identificacao_tab.py   aba Identificação
-ui_qt/renumeracao_panel.py   painel de numeração (faixa acima das abas) + botões em 3
+ui_qt/renumeracao_panel.py   painel de numeração (faixa acima das abas: Credenciado/
+                              Formato/Próximo nº por tipo; "Renumerar" pergunta a ordem
+                              Crescente/Decrescente numa mensagem que mostra o resultado
+                              de cada uma — `_perguntar_ordem`, nunca um combo fixo:
+                              depende do vizinho a cada vez; testes substituem esse
+                              método, é um QMessageBox modal) + botões em 3
                               fileiras: 1) Importar + Adicionar/Remover parcela;
                               2) Exportar KML/Shapefile (azul) + Limpar Parcela (rosa) +
                               Desfazer; 3) Exportar SIGEF .ods/.txt/.xlsx/.docx (marrom).
@@ -120,7 +142,17 @@ ui_qt/projeto_qt.py          monta/aplica o projeto .sigefproj a partir da janel
 ui_qt/tema_qt.py             cores do modelo oficial (config/theme_tokens.json) em Qt;
                               icone() (qtawesome) — ícones vetoriais dos botões, no lugar
                               de emoji no texto (nomes "fa5s.xxx"/"mdi.xxx")
-ui_qt/estilo_qt.py           folha de estilo (QSS) global do app
+ui_qt/estilo_qt.py           folha de estilo (QSS) global, gerada por tema
+                              (`gerar_folha_de_estilo(escuro)`) + `aplicar_tema`
+                              (QStyleHints.setColorScheme). Regra: todo fundo definido
+                              em QSS/código DEVE definir também a cor do texto — herdar
+                              da paleta deixava texto branco sobre fundo claro no modo
+                              escuro do Windows. Células/botões pastel mantêm a cor nos
+                              dois temas, com texto escuro fixo (ForegroundRole / `color`).
+                              Trocar o tema com a janela aberta exige limpar a folha antes
+                              de `setColorScheme` e reaplicar (senão menu/barra ficam na
+                              paleta antiga). Caixas de seleção: brancas com visto (PNG
+                              gerado na pasta temporária, `_garantir_imagem_check`)
 importers/delimitado.py      leitura de arquivo TXT/CSV pra importação
 importers/planilha.py        leitura de planilha XLS/XLSX/ODS pra importação (V5) —
                               mesma sistemática de delimitado.py, DataFrame cru
@@ -220,6 +252,24 @@ python tools/extract_theme.py       # styles.xml -> theme_tokens.json
 python tools/gerar_icone.py         # placeholder de assets/icone_app.ico
 pyinstaller sigef_qt.spec --noconfirm   # gera dist/PlanSIGEF.exe (onefile)
 ```
+
+**Dois `.exe`** (mesmo código, ambientes diferentes). `PlanSIGEF.exe` é o completo
+(NumPy atual). `PlanSIGEF_HP.exe` é para computadores antigos: o NumPy 2.4+ exige
+CPU com SSE4.2 e nem abre em AMD Phenom II / Intel Core 2 ("DLL load failed while
+importing _multiarray_umath"); o `_HP` usa NumPy 2.3.x (só SSE3) e não leva pyarrow.
+Ambiente à parte (`.venv-hp`, `requirements-hp.txt`), saída ao lado do outro:
+
+```powershell
+python -m venv .venv-hp
+.venv-hp\Scripts\python -m pip install -r requirements-hp.txt pyinstaller==6.20.0 pytest==9.1.1 pytest-qt==4.5.0
+$env:PLANSIGEF_NOME_EXE = "PlanSIGEF_HP"
+.venv-hp\Scripts\python -m PyInstaller sigef_qt.spec --noconfirm --workpath build_hp   # dist/PlanSIGEF_HP.exe
+$env:PLANSIGEF_NOME_EXE = $null
+```
+
+Rodar `pytest` também no `.venv-hp` antes de entregar. Só o NumPy foi confirmado
+como compatível com a CPU antiga; Qt/pyproj/shapely/lxml só se sabe testando na
+máquina HP de verdade.
 
 Ambiente: Windows, Python 3.11+.
 

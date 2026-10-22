@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QActionGroup, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -33,15 +33,15 @@ from core import exportacao_kml, exportacao_shapefile, exportacao_txt, exportaca
 from core.projeto import ProjetoInvalidoError, desserializar, serializar
 from core.template_loader import load_template
 from ui_qt.boas_vindas_dialog import BoasVindasDialog
-from ui_qt.estilo_qt import FOLHA_DE_ESTILO
+from ui_qt.estilo_qt import TEMA_AUTOMATICO, TEMA_CLARO, TEMA_ESCURO, aplicar_tema, reaplicar_folha
 from ui_qt.identificacao_tab import AbaIdentificacao
 from ui_qt.perimetro_tab import AbaPerimetro
-from ui_qt.preferencias_qt import obter_recentes, registrar_recente
+from ui_qt.preferencias_qt import obter_recentes, obter_tema, registrar_recente, salvar_tema
 from ui_qt.projeto_qt import aplicar_projeto, montar_projeto
 from ui_qt.relatorio_qt import montar_dados_relatorio
 from ui_qt.remover_parcela_dialog import RemoverParcelaDialog
 from ui_qt.renumeracao_panel import PainelNumeracao
-from ui_qt.tema_qt import carregar_tema, icone
+from ui_qt.tema_qt import carregar_tema, cor_icone_neutra, icone
 
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
 ICONE_APP = Path(__file__).resolve().parent / "assets" / "icone_app.ico"
@@ -188,16 +188,16 @@ class JanelaPrincipal(QMainWindow):
         # do menu deixa isso explícito, pra não confundir com Gerenciar
         # Parcelas (que mexe na lista de abas, não no conteúdo de uma).
         menu_gerenciar = self.menuBar().addMenu("&Gerenciar Planilha (Parcela atual)")
-        acao_marcar = menu_gerenciar.addAction("Marcar todos")
+        acao_marcar = menu_gerenciar.addAction("Selecionar todas")
         acao_marcar.triggered.connect(self._marcar_todos_atual)
-        acao_desmarcar = menu_gerenciar.addAction("Desmarcar todos")
+        acao_desmarcar = menu_gerenciar.addAction("Limpar seleção de todas")
         acao_desmarcar.triggered.connect(self._desmarcar_todos_atual)
 
         menu_gerenciar.addSeparator()
 
         acao_atualizar_codigo = menu_gerenciar.addAction("Atualizar código (só o Tipo)")
         acao_atualizar_codigo.triggered.connect(self.painel_numeracao._atualizar_tipos)
-        acao_renumerar = menu_gerenciar.addAction("Renumerar vértices marcados")
+        acao_renumerar = menu_gerenciar.addAction("Renumerar vértices selecionados")
         acao_renumerar.triggered.connect(self.painel_numeracao._renumerar)
         acao_reorganizar = menu_gerenciar.addAction("Reorganizar vértices")
         acao_reorganizar.triggered.connect(self._reorganizar_atual)
@@ -225,6 +225,40 @@ class JanelaPrincipal(QMainWindow):
         acao_limpar_parcela = menu_gerenciar.addAction("Limpar Parcela")
         acao_limpar_parcela.triggered.connect(self.painel_numeracao._limpar_parcela_atual)
 
+        # "E&xibir": o E de Exportar já é o atalho de &Exportar
+        menu_exibir = self.menuBar().addMenu("E&xibir")
+        menu_tema = menu_exibir.addMenu("Tema")
+        grupo_tema = QActionGroup(self)
+        grupo_tema.setExclusive(True)
+        self._acoes_tema = {}
+        for chave, rotulo in (
+            (TEMA_AUTOMATICO, "Automático (igual ao Windows)"),
+            (TEMA_CLARO, "Claro"),
+            (TEMA_ESCURO, "Escuro"),
+        ):
+            acao = menu_tema.addAction(rotulo)
+            acao.setCheckable(True)
+            grupo_tema.addAction(acao)
+            acao.triggered.connect(lambda _marcada=False, c=chave: self._escolher_tema(c))
+            self._acoes_tema[chave] = acao
+        self._acoes_tema[obter_tema()].setChecked(True)
+
+    def _escolher_tema(self, chave: str) -> None:
+        salvar_tema(chave)
+        aplicar_tema(QApplication.instance(), chave)
+        self._atualizar_icones_barra()
+
+    def _ao_mudar_esquema_de_cores(self, _esquema=None) -> None:
+        # Windows trocou claro/escuro com o app aberto (vale no Automático);
+        # a folha de estilo e os ícones da barra dependem do esquema efetivo
+        reaplicar_folha(QApplication.instance())
+        self._atualizar_icones_barra()
+
+    def _atualizar_icones_barra(self) -> None:
+        cor = cor_icone_neutra()
+        for acao, nome in self._icones_barra:
+            acao.setIcon(icone(nome, cor))
+
     def _criar_barra_ferramentas(self) -> None:
         # ícones vetoriais qtawesome (Font Awesome/Material Design) — pedido
         # do usuário no lugar dos ícones nativos do Qt (QStyle), que
@@ -235,27 +269,32 @@ class JanelaPrincipal(QMainWindow):
         barra.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(barra)
 
-        acao_novo = barra.addAction(icone("mdi.file-plus-outline"), "Novo Projeto")
-        acao_novo.triggered.connect(self._novo_projeto)
+        # cor do ícone acompanha o tema (escuro no claro, claro no escuro):
+        # guardamos (ação, nome) pra recolorir quando o tema mudar
+        self._icones_barra = []
+        cor = cor_icone_neutra()
 
-        acao_abrir = barra.addAction(icone("fa5s.folder-open"), "Abrir Projeto")
-        acao_abrir.triggered.connect(self._abrir_projeto)
+        def _acao(nome_icone: str, texto: str):
+            acao = barra.addAction(icone(nome_icone, cor), texto)
+            self._icones_barra.append((acao, nome_icone))
+            return acao
 
-        acao_salvar = barra.addAction(icone("fa5s.save"), "Salvar")
-        acao_salvar.triggered.connect(self._salvar_projeto)
-
-        acao_salvar_como = barra.addAction(icone("mdi.content-save-edit-outline"), "Salvar Como")
-        acao_salvar_como.triggered.connect(self._salvar_projeto_como)
+        _acao("mdi.file-plus-outline", "Novo Projeto").triggered.connect(self._novo_projeto)
+        _acao("fa5s.folder-open", "Abrir Projeto").triggered.connect(self._abrir_projeto)
+        _acao("fa5s.save", "Salvar").triggered.connect(self._salvar_projeto)
+        _acao("mdi.content-save-edit-outline", "Salvar Como").triggered.connect(self._salvar_projeto_como)
 
         barra.addSeparator()
 
         # botão de baixo (ui_qt/renumeracao_panel.py) continua existindo —
         # pedido do usuário.
-        acao_desfazer = barra.addAction(icone("fa5s.undo"), "Desfazer")
+        acao_desfazer = _acao("fa5s.undo", "Desfazer")
         acao_desfazer.setToolTip(
             "Volta a grade da parcela aberta agora pro estado de antes da última mudança (Ctrl+Z)."
         )
         acao_desfazer.triggered.connect(self.painel_numeracao._desfazer_atual)
+
+        QGuiApplication.styleHints().colorSchemeChanged.connect(self._ao_mudar_esquema_de_cores)
 
     def _exigir_aba_perimetro_atual(self) -> AbaPerimetro | None:
         aba = self._aba_perimetro_atual()
@@ -573,7 +612,9 @@ def main() -> None:
     # de QSS (a borda de foco, principalmente) — era por isso que o campo
     # de texto ficava sem contraste, só um traço fino ao focar.
     app.setStyle("Fusion")
-    app.setStyleSheet(FOLHA_DE_ESTILO)
+    # tema salvo (Automático por padrão = segue o Windows); a janela regera a
+    # folha e os ícones se o Windows trocar claro/escuro com o app aberto
+    aplicar_tema(app, obter_tema())
     if ICONE_APP.exists():
         # setWindowIcon na QApplication vale pra toda janela sem ícone
         # próprio (barra de título, barra de tarefas, Alt+Tab) — o ícone do
